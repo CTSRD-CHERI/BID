@@ -4,6 +4,8 @@ import BitPat::*;
 import List::*;
 import ModuleCollect::*;
 
+typedef Bool World;
+
 typedef function GuardedAction f(Bit#(n) subject) InstrDefn#(numeric type n);
 typedef ModuleCollect#(InstrDefn#(n), ifc) InstrDefModule#(numeric type n, type ifc);
 typedef InstrDefModule#(32, ifc) Instr32DefModule#(type ifc);
@@ -16,8 +18,10 @@ module [InstrDefModule#(n)] defineInstr#(BitPat#(n, t, Action) p, function t f)(
   addToCollection(flipPat);
 endmodule
 
-module [Module] mkISASim#(Bit#(n) instr, List#(InstrDefModule#(n, ifc)) ms) ();
-  let cs <- mapM(exposeCollection,ms);
+module [Module] mkISASim#(Bit#(n) instr, List#(function InstrDefModule#(n, ifc) mkMod (World wo)) ms) ();
+  World w = True;
+  function applyWorld (g) = g(w);
+  let cs <- mapM(exposeCollection,List::map(applyWorld, ms));
   function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
   List#(InstrDefn#(n)) instrDefs = concat(map(getItems, cs));
   Integer n = length(instrDefs);
