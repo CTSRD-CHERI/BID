@@ -66,10 +66,10 @@ module [Module] mkISASim#(FIFO#(Bit#(n)) instq, List#(function InstrDefModule#(n
     instrDefs = List::tail(instrDefs);
   end
   rule do_epilogue (simStage == Epilogue);
+    $display("--------------- epilogue @ %0t --------------", $time);
     epilogue(w);
     simStage <= Instruction;
     instq.deq();
-    $display("epilogue @ %0t", $time);
     $display("=====================================================================");
   endrule
 endmodule
