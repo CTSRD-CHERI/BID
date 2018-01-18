@@ -51,21 +51,19 @@ module [InstrDefModule#(32)] mkBaseISA#(ArchState s, World w) ();
   defineInstr(pat(v, v, v, v, v, n(7'b1101111)),instrJAL);
 
   function List#(Action) instrMultiStepTest(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) =
-    List::cons(
-    action
-      $display("instrMultiCycleTest step 1");
-    endaction,
-    List::cons(
-    action
-      $display("instrMultiCycleTest step 2");
-      $display("writing newPC");
-      s.newPC <= tagged Valid (0);
-    endaction,
-    List::cons(
-    action
-      $display("instrMultiCycleTest step 3");
-    endaction,
-    Nil)));
+    list(
+      action
+        $display("instrMultiCycleTest step 1");
+      endaction,
+      action
+        $display("instrMultiCycleTest step 2");
+        $display("writing newPC");
+        s.newPC <= tagged Valid (0);
+      endaction,
+      action
+        $display("instrMultiCycleTest step 3");
+      endaction
+    );
   defineInstr(pat(v, v, n(3'b111), v, n(7'b1111111)),instrMultiStepTest);
 
 endmodule
