@@ -15,16 +15,31 @@ import BID :: *;
 typedef struct {
   Vector#(32,Reg#(Bit#(32))) regfile;
   Reg#(Bit#(32)) pc;
-} ArchState;
+} MyArchState;
 
-module initState (ArchState);
-  ArchState s;
-  s.regfile <- replicateM(mkReg(0));
-  s.pc <- mkReg(0);
-  return s;
-endmodule
+instance ArchState#(MyArchState);
 
-function Action pcEpilogue(ArchState s, World w) =
+  module initArchState (MyArchState);
+    MyArchState s;
+    s.regfile <- replicateM(mkReg(0));
+    s.pc <- mkReg(0);
+    return s;
+  endmodule
+
+  function Fmt lightReport (MyArchState s);
+    return $format("pc = 0x%0x", s.pc);
+  endfunction
+
+  function Fmt fullReport (MyArchState s);
+    return (
+      $format("regfile %s \n", map(readReg,s.regfile)) +
+      $format("pc = 0x%0x", s.pc)
+    );
+  endfunction
+
+endinstance
+
+function Action pcEpilogue(MyArchState s, World w) =
   action
     $display("---------- epilogue @%0t ----------", $time);
     Bit#(32) tmpPC = s.pc + 4;
@@ -37,7 +52,7 @@ function Action pcEpilogue(ArchState s, World w) =
 // Define instruction set //
 ////////////////////////////////////////////////////////////////////////////////
 
-module [InstrDefModule#(32)] mkBaseISA#(ArchState s, World w) ();
+module [InstrDefModule#(32)] mkBaseISA#(MyArchState s, World w) ();
 
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) =
     action
@@ -97,7 +112,7 @@ module top ();
   FIFO#(Bit#(32)) instq <- mkFIFO();
 
   // instanciating simulator
-  ArchState s <- initState;
+  MyArchState s <- initArchState;
   mkISASim(instq, s, list(mkBaseISA));
 
   // rule to keep the simulator busy

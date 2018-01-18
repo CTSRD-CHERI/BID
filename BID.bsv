@@ -23,6 +23,16 @@ function a list() provisos (MkList#(a, b));
   return mkList(Nil);
 endfunction
 
+/////////////////
+// state types //
+////////////////////////////////////////////////////////////////////////////////
+
+typeclass ArchState#(type a);
+  module initArchState(a);
+  function Fmt lightReport (a s);
+  function Fmt fullReport (a s);
+endtypeclass
+
 typedef Bool World;
 
 ///////////////////////////////////
@@ -61,7 +71,11 @@ endinstance
 // ISA simulator engine //
 ////////////////////////////////////////////////////////////////////////////////
 
-module [Module] mkISASim#(FIFO#(Bit#(n)) instq, aState s, List#(function InstrDefModule#(n, ifc) mkMod (aState st, World wo)) ms) ();
+module [Module] mkISASim#(
+  FIFO#(Bit#(n)) instq,
+  aState s,
+  List#(function InstrDefModule#(n, ifc) mkMod (aState st, World wo)) ms) ()
+  provisos (ArchState#(aState));
 
   // local state
   Reg#(UInt#(8)) stepCounter <- mkReg(0);
@@ -83,10 +97,12 @@ module [Module] mkISASim#(FIFO#(Bit#(n)) instq, aState s, List#(function InstrDe
       let body = List::head(acts.body);
       rule generatedRule (stepCounter == fromInteger(j) && acts.guard);
         $display("--------------- step %0d @%0t --------------", stepCounter, $time);
+        $display(lightReport(s));
         body;
         if (stepCounter == fromInteger(n1 - 1)) begin
           stepCounter <= 0;
           instq.deq();
+          $display("==============================================");
         end else stepCounter <= fromInteger(j + 1);
       endrule
       acts.body = List::tail(acts.body);
