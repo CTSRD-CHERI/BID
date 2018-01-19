@@ -1,9 +1,11 @@
 // 2018, Alexandre Joannou, University of Cambridge
 
-import BitPat::*;
-import List::*;
+import BitPat :: *;
+
+import List :: *;
 import FIFO :: *;
-import ModuleCollect::*;
+import RegFile :: *;
+import ModuleCollect :: *;
 
 // Nice friendly list constructor lifted from Bluecheck's sources
 
@@ -33,7 +35,9 @@ typeclass ArchState#(type a);
   function Fmt fullReport (a s);
 endtypeclass
 
-typedef Bool World;
+typeclass World#(type a);
+  module initWorld(a);
+endtypeclass
 
 ///////////////////////////////////
 // Types to harvest instructions //
@@ -73,13 +77,13 @@ endinstance
 
 module [Module] mkISASim#(
   FIFO#(Bit#(n)) instq,
-  aState s,
-  List#(function InstrDefModule#(n, ifc) mkMod (aState st, World wo)) ms) ()
-  provisos (ArchState#(aState));
+  archstate_t s,
+  world_t w,
+  List#(function InstrDefModule#(n, ifc) mkMod (archstate_t st, world_t wo)) ms) ()
+  provisos (ArchState#(archstate_t), World#(world_t));
 
   // local state
   Reg#(UInt#(8)) stepCounter <- mkReg(0);
-  World w = True;
 
   // harvest instructions
   function applyStateAndWorld (g) = g(s,w);
@@ -109,5 +113,63 @@ module [Module] mkISASim#(
     end
     instrDefs = List::tail(instrDefs);
   end
+
+endmodule
+
+////////////////
+// Simple Mem //
+////////////////////////////////////////////////////////////////////////////////
+
+typedef union tagged {
+  struct {
+    index_t addr;
+    Bit#(5) byteWidth;
+  } ReadReq;
+  struct {
+    index_t addr;
+    Bit#(5) byteWidth;
+    data_t data;
+  } WriteReq;
+} MemReq#(type index_t, type data_t) deriving (Bits, FShow);
+
+typedef union tagged {
+  data_t ReadRsp;
+  void Failure;
+} MemRsp#(type data_t) deriving (Bits, FShow);
+
+interface Mem#(type index_t, type data_t);
+  method Action sendReq (MemReq#(index_t, data_t) req);
+  method ActionValue#(MemRsp#(data_t)) getRsp ();
+endinterface
+
+module mkMem#(Integer size) (Mem#(index_t, data_t))
+provisos(
+  Bits#(index_t, index_w),
+  Literal#(index_t),
+  Bits#(data_t, data_w),
+  FShow#(data_t)
+);
+
+  RegFile#(index_t, data_t) mem <- mkRegFile(0, fromInteger(size - 1));
+  Reg#(Maybe#(MemRsp#(data_t))) rsp <- mkReg(tagged Invalid);
+
+  method Action sendReq (MemReq#(index_t, data_t) req);
+    case (req) matches
+      tagged ReadReq .r: begin
+        rsp <= tagged Valid (tagged ReadRsp mem.sub(r.addr));
+        $display("simple mem -- read addr 0x%0x", r.addr);
+      end
+      tagged WriteReq .w: begin
+        mem.upd(w.addr, w.data);
+        $display("simple mem -- write addr 0x%0x with data 0x%0x", w.addr, w.data);
+      end
+    endcase
+  endmethod
+
+  method ActionValue#(MemRsp#(data_t)) getRsp () if (isValid(rsp));
+    let retRsp = fromMaybe(tagged Failure, rsp);
+    $display("simple mem -- returning ", fshow(retRsp));
+    return retRsp;
+  endmethod
 
 endmodule

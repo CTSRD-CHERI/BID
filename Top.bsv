@@ -39,20 +39,33 @@ instance ArchState#(MyArchState);
 
 endinstance
 
-function Action pcEpilogue(MyArchState s, World w) =
+typedef struct {
+  Mem#(Bit#(32), Bit#(32)) mem;
+} MyWorld;
+
+instance World#(MyWorld);
+
+  module initWorld (MyWorld);
+    MyWorld w;
+    w.mem <- mkMem(8192);
+    return w;
+  endmodule
+
+endinstance
+
+function Action pcEpilogue(MyArchState s, MyWorld w) =
   action
     $display("---------- epilogue @%0t ----------", $time);
     Bit#(32) tmpPC = s.pc + 4;
     s.pc <= tmpPC;
     $display("s.pc <= 0x%0x", tmpPC);
-    $display("===============================================================");
   endaction;
 
 ////////////////////////////
 // Define instruction set //
 ////////////////////////////////////////////////////////////////////////////////
 
-module [InstrDefModule#(32)] mkBaseISA#(MyArchState s, World w) ();
+module [InstrDefModule#(32)] mkBaseISA#(MyArchState s, MyWorld w) ();
 
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) =
     action
@@ -65,7 +78,6 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState s, World w) ();
 
   function Action instrADDI(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) =
     action
-      $display("world: ", fshow(w));
       $display("addi %0d, %0d, %0d", rd, rs1, imm);
       $display("regfile[%0d] <= %0d", rd, s.regfile[rs1] + signExtend(imm));
       s.regfile[rd] <= s.regfile[rs1] + signExtend(imm);
@@ -78,26 +90,25 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState s, World w) ();
       Bit#(32) imm = {signExtend(imm20),imm19_12,imm11,imm10_1,1'b0};
       s.pc <= s.pc + imm;
       s.regfile[rd] <= s.pc + 4;
-      $display("world: ", fshow(w));
       $display("jal %0d, %0d", rd, imm);
     endaction;
   defineInstr(pat(v, v, v, v, v, n(7'b1101111)),instrJAL);
 
-  function List#(Action) instrMultiStepTest(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) =
+  function List#(Action) instrLB(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) =
     list(
       action
-        $display("instrMultiCycleTest step 1");
+        $display("lb %0d, %0d, %0d - step 1", rd, rs1, imm);
+        Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
+        w.mem.sendReq(tagged ReadReq {addr: addr, byteWidth: 1});
       endaction,
       action
-        $display("instrMultiCycleTest step 2");
-        s.pc <= 0;
-      endaction,
-      action
-        $display("instrMultiCycleTest step 3");
+        $display("lb %0d, %0d, %0d - step 2", rd, rs1, imm);
+        let rsp <- w.mem.getRsp();
+        case (rsp) matches tagged ReadRsp .r: s.regfile[rd] <= r; endcase
         pcEpilogue(s,w);
       endaction
     );
-  defineInstr(pat(v, v, n(3'b111), v, n(7'b1111111)),instrMultiStepTest);
+  defineInstr(pat(v, v, n(3'b000), v, n(7'b0000011)),instrLB);
 
 endmodule
 
@@ -113,13 +124,14 @@ module top ();
 
   // instanciating simulator
   MyArchState s <- initArchState;
-  mkISASim(instq, s, list(mkBaseISA));
+  MyWorld w <- initWorld;
+  mkISASim(instq, s, w, list(mkBaseISA));
 
   // rule to keep the simulator busy
   rule dummyFetch;
     if (toggle == 0) instq.enq(32'b0000000_00001_00010_000_00011_1101111); // JAL
     else if (toggle == 1) instq.enq(32'b0000000_00001_00010_000_00011_0110011); // ADD
-    else if (toggle == 2) instq.enq(32'b0000000_00001_00010_111_00011_1111111); // MultiStepTest
+    else if (toggle == 2) instq.enq(32'b0000000_00001_00010_000_00011_0000011); // LB
     else if (toggle == 3) instq.enq(32'b0000000_00001_00010_000_00011_0010011); // ADDI
     toggle <= toggle + 1;
   endrule
