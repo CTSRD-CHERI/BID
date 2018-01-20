@@ -99,7 +99,7 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState s, MyWorld w) ();
       action
         $display("lb %0d, %0d, %0d - step 1", rd, rs1, imm);
         Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
-        w.mem.sendReq(tagged ReadReq {addr: addr, byteWidth: 1});
+        w.mem.sendReq(tagged ReadReq {addr: addr, byteWidth: 3});
       endaction,
       action
         $display("lb %0d, %0d, %0d - step 2", rd, rs1, imm);
@@ -131,7 +131,7 @@ module top ();
   rule dummyFetch;
     if (toggle == 0) instq.enq(32'b0000000_00001_00010_000_00011_1101111); // JAL
     else if (toggle == 1) instq.enq(32'b0000000_00001_00010_000_00011_0110011); // ADD
-    else if (toggle == 2) instq.enq(32'b0000000_00001_00010_000_00011_0000011); // LB
+    else if (toggle == 2) instq.enq(32'b0000000_00010_00010_000_00011_0000011); // LB
     else if (toggle == 3) instq.enq(32'b0000000_00001_00010_000_00011_0010011); // ADDI
     toggle <= toggle + 1;
   endrule
