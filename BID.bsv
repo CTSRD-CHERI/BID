@@ -3,10 +3,10 @@
 package BID;
 
 export BID :: *;
-export BIDUtils :: *;
+export BID_Utils :: *;
 
 import BitPat :: *;
-import BIDUtils :: *;
+import BID_Utils :: *;
 
 import List :: *;
 import FIFO :: *;
