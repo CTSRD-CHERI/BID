@@ -21,7 +21,7 @@ instance ArchState#(MyArchState);
 
   module initArchState (MyArchState);
     MyArchState s;
-    s.regfile <- replicateM(mkReg(0));
+    s.regfile <- mkRegFileZ;
     s.pc <- mkReg(0);
     return s;
   endmodule

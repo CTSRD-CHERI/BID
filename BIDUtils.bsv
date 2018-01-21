@@ -1,5 +1,6 @@
 // 2018, Alexandre Joannou, University of Cambridge
 
+import Vector :: *;
 import RegFile :: *;
 import FIFO :: *;
 import SpecialFIFOs :: *;
@@ -23,6 +24,49 @@ endinstance
 
 function a list() provisos (MkList#(a, b));
   return mkList(Nil);
+endfunction
+
+// Architectural state helpers
+////////////////////////////////////////////////////////////////////////////////
+
+// Read-only register
+module mkROReg#(parameter a v) (Reg#(a));
+  method Action _write (a _) = action endaction;
+  method a _read() = v;
+endmodule
+
+// Register file with read-only 0 register (set to 0)
+module mkRegFileZ (Vector#(n, Reg#(a)))
+provisos (Bits#(a, a_sz), Literal#(a));
+  Reg#(a) r0 <- mkROReg(0);
+  Vector#(TSub#(n, 1), Reg#(a)) rf <- replicateM(mkReg(0));
+  return cons(r0,rf);
+endmodule
+
+// Combinational primitives
+////////////////////////////////////////////////////////////////////////////////
+
+// signed comparison functions
+function Bool signedLT (Bit#(n) a, Bit#(n) b);
+  Int#(n) sa = unpack(a);
+  Int#(n) sb = unpack(b);
+  return sa < sb;
+endfunction
+function Bool signedGT (Bit#(n) a, Bit#(n) b);
+  Int#(n) sa = unpack(a);
+  Int#(n) sb = unpack(b);
+  return sa > sb;
+endfunction
+function Bool signedGE (Bit#(n) a, Bit#(n) b);
+  Int#(n) sa = unpack(a);
+  Int#(n) sb = unpack(b);
+  return sa >= sb;
+endfunction
+
+// arithmetic right shift
+function Bit#(n) arithRightShift (Bit#(n) a, Bit#(m) b);
+  Int#(n) sa = unpack(a);
+  return pack(sa >> b);
 endfunction
 
 // Type to hold an n-bit value initialized by a literal starting
