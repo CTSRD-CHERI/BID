@@ -103,14 +103,14 @@ typedef 8 BitsPerByte;
 
 // Memory request
 typedef union tagged {
-`define ACCESS_W_T BitPO#(TLog#(TDiv#(SizeOf#(data_t), BitsPerByte)))
+`define DATA_BYTES TDiv#(SizeOf#(data_t), BitsPerByte)
   struct {
     idx_t addr;
-    `ACCESS_W_T numBytes;
+    BitPO#(TLog#(`DATA_BYTES)) numBytes;
   } ReadReq;
   struct {
     idx_t addr;
-    `ACCESS_W_T numBytes;
+    Bit#(`DATA_BYTES) byteEnable;
     data_t data;
   } WriteReq;
 } MemReq#(type idx_t, type data_t);
@@ -147,6 +147,9 @@ provisos(
 `define OFFSET_T Bit#(offset_sz)
 `define OFFSET_LARGE_T Bit#(offset_large_sz)
 `define IIDX_T Bit#(iidx_sz)
+`define BE_T Bit#(data_byte_sz)
+
+  // TODO implement serialization of requests
 
   // RegFile to store actual values
   RegFile#(`IIDX_T, Bit#(data_sz)) mem <- mkRegFile(0, fromInteger(size - 1));
@@ -159,12 +162,19 @@ provisos(
   FIFO#(Bit#(data_sz))
     readRspFIFO <- mkSizedFIFO(1);
 
+  // Write request FIFOs
+  FIFO#(Tuple4#(`IIDX_T, `OFFSET_T, `BE_T, data_t))
+    writeReqFIFO <- mkBypassFIFO;
+
   // utility function to slice an address
   function Tuple2#(`IIDX_T, `OFFSET_T) craftInternalIndex(idx_t idx);
     return tuple2(truncateLSB(pack(idx)), truncate(pack(idx)));
   endfunction
 
-  // First stage of the read
+  // Read
+  //////////////////////////////////////////////////////////////////////////////
+
+  // First stage of a read request
   rule read_stage0;
     // look at current read request and read the data
     match {.idx, .offset, .read_width} = readReqFIFO.first();
@@ -187,7 +197,7 @@ provisos(
     end
   endrule
 
-  // Second stage of the read when crossing an element boundary
+  // Second stage of a read request when crossing an element boundary
   rule read_stage1;
     // consume request from the first stage and perform lookup
     match {.val0, .idx, .width, .shift} = readNextFIFO.first();
@@ -202,6 +212,20 @@ provisos(
     $display("simple mem @%0t -- read stage 1 -- idx 0x%0x, read %0d byte(s)", $time, idx, width);
   endrule
 
+  // Write
+  //////////////////////////////////////////////////////////////////////////////
+
+  // First stage of a write request
+  rule write_stage0;
+    match {.idx, .offset, .be, .data} = writeReqFIFO.first();
+    //TODO implement write
+    writeReqFIFO.deq();
+    $display("simple mem @%0t -- write stage 0 -- idx 0x%0x, offset %0d, be 0b%0b, data 0x%0x", $time, idx, offset, be, data);
+  endrule
+
+  // Interface
+  //////////////////////////////////////////////////////////////////////////////
+
   method Action sendReq (MemReq#(idx_t, data_t) req);
     case (req) matches
       tagged ReadReq .r: begin
@@ -214,9 +238,8 @@ provisos(
         readReqFIFO.enq(tuple3(idx, offset, zeroExtend(readBitPO(r.numBytes))));
       end
       tagged WriteReq .w: begin
-        //match {.idx, .offset} = craftInternalIndex(w.addr);
-        //mem.upd(idx, w.data);
-        //$display("simple mem -- write addr 0x%0x (idx: 0x%0x, offset: %0d) with data 0x%0x", w.addr, idx, offset, w.data);
+        match {.idx, .offset} = craftInternalIndex(w.addr);
+        writeReqFIFO.enq(tuple4(idx, offset, w.byteEnable, w.data));
       end
     endcase
   endmethod
