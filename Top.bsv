@@ -99,7 +99,7 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState s, MyWorld w) ();
       action
         $display("lb %0d, %0d, %0d - step 1", rd, rs1, imm);
         Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
-        w.mem.sendReq(tagged ReadReq {addr: addr, byteWidth: 3});
+        w.mem.sendReq(tagged ReadReq {addr: addr, numBytes: 1});
       endaction,
       action
         $display("lb %0d, %0d, %0d - step 2", rd, rs1, imm);
