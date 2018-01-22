@@ -114,7 +114,7 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState s, MyWorld w) ();
     action
       Bit#(32) imm = {signExtend(imm11_5), imm4_0};
       Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
-      w.mem.sendReq(tagged WriteReq {addr: addr, byteEnable: 4'b0001, data: s.regfile[rs2]});
+      w.mem.sendReq(tagged WriteReq {addr: addr, byteEnable: 4'b1111, data: s.regfile[rs2]});
       $display("sb %0d, %0d, %0d", rs1, rs2, imm);
     endaction;
   defineInstr(pat(v, v, v, n(3'b000), v, n(7'b0100011)),instrSB);
@@ -139,7 +139,7 @@ module top ();
   // rule to keep the simulator busy
   rule dummyFetch;
     if (toggle == 0) instq.enq(32'b0000000_00001_00010_000_00011_1101111); // JAL
-    else if (toggle == 1) instq.enq(32'b0000000_00001_00010_000_00011_0100011); // SB
+    else if (toggle == 1) instq.enq(32'b0000000_00010_00010_000_00011_0100011); // SB
     else if (toggle == 2) instq.enq(32'b0000000_00010_00010_000_00011_0000011); // LB
     else if (toggle == 3) instq.enq(32'b0000000_00001_00010_000_00011_0010011); // ADDI
     toggle <= toggle + 1;

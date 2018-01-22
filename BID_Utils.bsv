@@ -134,6 +134,7 @@ provisos(
   Bits#(idx_t, idx_sz),
   Bits#(data_t, data_sz),
   Div#(data_sz, BitsPerByte, data_byte_sz),
+  Mul#(data_byte_sz, BitsPerByte, data_sz),
   Log#(data_byte_sz, offset_sz),
   Add#(offset_sz, 1, offset_large_sz),
   Add#(offset_sz, iidx_sz, idx_sz),
@@ -149,7 +150,9 @@ provisos(
 `define IIDX_T Bit#(iidx_sz)
 `define BE_T Bit#(data_byte_sz)
 
+  // XXX
   // TODO implement serialization of requests
+  // XXX
 
   // RegFile to store actual values
   RegFile#(`IIDX_T, Bit#(data_sz)) mem <- mkRegFile(0, fromInteger(size - 1));
@@ -165,6 +168,8 @@ provisos(
   // Write request FIFOs
   FIFO#(Tuple4#(`IIDX_T, `OFFSET_T, `BE_T, data_t))
     writeReqFIFO <- mkBypassFIFO;
+  FIFO#(Tuple3#(`IIDX_T, Bit#(data_sz), Bit#(data_sz)))
+    writeNextFIFO <- mkSizedFIFO(1);
 
   // utility function to slice an address
   function Tuple2#(`IIDX_T, `OFFSET_T) craftInternalIndex(idx_t idx);
@@ -218,9 +223,46 @@ provisos(
   // First stage of a write request
   rule write_stage0;
     match {.idx, .offset, .be, .data} = writeReqFIFO.first();
-    //TODO implement write
+    // read old value
+    Bit#(data_sz) old_val = mem.sub(idx);
+    // prepare bit mask
+    Vector#(data_byte_sz, Bit#(1)) beMask = unpack(be);
+    Vector#(data_byte_sz, Bit#(BitsPerByte)) bitMask = unpack(0);
+    for (Integer i = 0; i < valueOf(data_byte_sz); i = i + 1) begin
+      bitMask[i] = (be[i] == 1'b1) ? ~0 : 0;
+    end
+    // create bitOffset
+    let bitOffset = offset << valueOf(TLog#(BitsPerByte));
+    // merge old data and new data
+    Bit#(data_sz) new_data = pack(data) & pack(bitMask);
+    Bit#(data_sz) new_val = (new_data << bitOffset) | (old_val & ~(pack(bitMask) << bitOffset));
+    mem.upd(idx, new_val);
+    $display("simple mem @%0t -- write stage 0 -- wrote 0x%0x @idx 0x%0x", $time, new_val, idx);
+    // Check if there are valid Byte enable in the next memory element
+    `OFFSET_LARGE_T byteShift = fromInteger(valueOf(data_byte_sz)) - zeroExtend(offset);
+    let bitShift = byteShift << valueOf(TLog#(BitsPerByte));
+    Bit#(data_byte_sz) more_be = be >> byteShift;
+    Bit#(data_sz) more_data = new_data >> bitShift;
+    Bit#(data_sz) more_bitMask = pack(bitMask) >> bitShift;
+    if (more_be != 0) begin
+      writeNextFIFO.enq(tuple3(idx + 1, more_bitMask, more_data));
+    end else begin
+      writeReqFIFO.deq();
+    end
+  endrule
+
+  // Second stage of a write request when crossing an element boundary
+  rule write_stage1;
+    // consume request from the first stage and perform lookup
+    match {.idx, .bitMask, .data} = writeNextFIFO.first();
+    writeNextFIFO.deq();
+    Bit#(data_sz) old_val = mem.sub(idx);
+    // merge old data and new data
+    Bit#(data_sz) new_val = (data & bitMask) | (old_val & ~bitMask);
+    mem.upd(idx, new_val);
+    $display("simple mem @%0t -- write stage 1 -- wrote 0x%0x @idx 0x%0x", $time, new_val, idx);
+    // consume write request
     writeReqFIFO.deq();
-    $display("simple mem @%0t -- write stage 0 -- idx 0x%0x, offset %0d, be 0b%0b, data 0x%0x", $time, idx, offset, be, data);
   endrule
 
   // Interface
