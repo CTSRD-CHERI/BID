@@ -4,7 +4,8 @@ import Vector :: *;
 import RegFile :: *;
 import FIFO :: *;
 import SpecialFIFOs :: *;
-import Printf :: *;
+
+import BID_Interface :: *;
 
 // Nice friendly list constructor lifted from Bluecheck's sources:
 // https://github.com/CTSRD-CHERI/bluecheck.git
@@ -69,63 +70,9 @@ function Bit#(n) arithRightShift (Bit#(n) a, Bit#(m) b);
   return pack(sa >> b);
 endfunction
 
-// Type to hold an n-bit value initialized by a literal starting
-// at 1 and up to 2^n rather than 0 to 2^n-1
-////////////////////////////////////////////////////////////////////////////////
-
-typedef struct {
-  Bit#(n) val;
-} BitPO#(numeric type n);
-
-instance Literal#(BitPO#(n));
-  function BitPO#(n) fromInteger (Integer x);
-    if (x > 0 && x < valueOf(TExp#(n)))
-      return BitPO { val: fromInteger(x) };
-    else if (x == valueOf(TExp#(n)))
-      return BitPO { val: 0 };
-    else return error(sprintf("Trying to initialize a BitPO#(%0d) with literal %0d. The range of valid values is %0d to %0d.",valueOf(n),x,1,valueOf(TExp#(n))));
-  endfunction
-  function Bool inLiteralRange (BitPO#(n) _, Integer x);
-    return (x > 0 && x <= valueOf(TExp#(n)));
-  endfunction
-endinstance
-
-function Bit#(TAdd#(n,1)) readBitPO (BitPO#(n) x);
-  return (x.val == 0) ? fromInteger(valueOf(TExp#(n))) : zeroExtend(x.val);
-endfunction
-
 ////////////////
 // Simple Mem //
 ////////////////////////////////////////////////////////////////////////////////
-
-typedef 8 BitsPerByte;
-
-
-// Memory request
-typedef union tagged {
-`define DATA_BYTES TDiv#(SizeOf#(data_t), BitsPerByte)
-  struct {
-    idx_t addr;
-    BitPO#(TLog#(`DATA_BYTES)) numBytes;
-  } ReadReq;
-  struct {
-    idx_t addr;
-    Bit#(`DATA_BYTES) byteEnable;
-    data_t data;
-  } WriteReq;
-} MemReq#(type idx_t, type data_t);
-
-// Memory response
-typedef union tagged {
-  data_t ReadRsp;
-  void Failure;
-} MemRsp#(type data_t) deriving (Bits, FShow);
-
-// Memory interface
-interface Mem#(type idx_t, type data_t);
-  method Action sendReq (MemReq#(idx_t, data_t) req);
-  method ActionValue#(MemRsp#(data_t)) getRsp ();
-endinterface
 
 // Memory module
 module mkMem#(Integer size) (Mem#(idx_t, data_t))
@@ -293,5 +240,31 @@ provisos(
     $display("simple mem @%0t -- ", $time, fshow(rsp));
     return rsp;
   endmethod
+
+endmodule
+
+///////////////////////////////
+// Simple instruction Stream //
+////////////////////////////////////////////////////////////////////////////////
+
+// XXX hex format example in test-program.hex
+
+`ifdef MAX_ISTREAM_LENGTH
+typedef TLog#(MAX_ISTREAM_LENGTH) IStreamIdxSz;
+`else
+typedef 12 IStreamIdxSz;
+`endif
+
+module mkInstStream#(String file) (InstStream#(n));
+
+  RegFile#(Bit#(IStreamIdxSz), Bit#(n)) mem <- mkRegFileFullLoad(file);
+  Reg#(Bit#(IStreamIdxSz)) counter <- mkReg(0);
+
+  rule checkInst;
+    $display("instr stream @%0t -- inst %0d = 0x%0x", $time, counter, mem.sub(counter));
+  endrule
+
+  method Bit#(n) peekInst() = mem.sub(counter);
+  method Action nextInst() = action counter <= counter + 1; endaction;
 
 endmodule
