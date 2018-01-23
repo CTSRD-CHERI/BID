@@ -74,6 +74,7 @@ endfunction
 // Simple Mem //
 ////////////////////////////////////////////////////////////////////////////////
 
+// size expressed in bytes
 module mkSimpleMem#(Integer size) (Mem#(idx_t, data_t))
 provisos(
   // type sizes
@@ -91,7 +92,7 @@ provisos(
 `define BYTE Bit#(BitsPerByte)
 `define DATAVEC Vector#(data_byte_sz, Bit#(BitsPerByte))
 
-  Vector#(data_byte_sz, RegFile#(Bit#(iidx_sz), `BYTE)) mem <- replicateM(mkRegFile(0, fromInteger(size/valueOf(data_byte_sz) - 1)));
+  Vector#(data_byte_sz, RegFile#(Bit#(iidx_sz), `BYTE)) mem <- replicateM(mkRegFile(0, fromInteger(size/valueOf(TMul#(data_byte_sz,data_byte_sz)) - 1)));
   FIFO#(`DATAVEC) readRspFIFO <- mkSizedFIFO(1);
 
   // Interface
@@ -144,6 +145,7 @@ provisos(
 endmodule
 
 // Memory module
+// size expressed in bytes
 module mkMem#(Integer size) (Mem#(idx_t, data_t))
 provisos(
   // type sizes
@@ -172,7 +174,7 @@ provisos(
   // XXX
 
   // RegFile to store actual values
-  RegFile#(`IIDX_T, Bit#(data_sz)) mem <- mkRegFile(0, fromInteger(size - 1));
+  RegFile#(`IIDX_T, Bit#(data_sz)) mem <- mkRegFile(0, fromInteger(size/valueOf(data_byte_sz) - 1));
 
   // Read request FIFOs
   FIFO#(Tuple3#(`IIDX_T, `OFFSET_T, `OFFSET_LARGE_T))
@@ -325,9 +327,13 @@ typedef TLog#(MAX_ISTREAM_LENGTH) IStreamIdxSz;
 typedef 12 IStreamIdxSz;
 `endif
 
-module mkInstStream#(String file) (InstStream#(n));
+// size expressed in bytes
+module mkInstStream#(String file, Integer size) (InstStream#(n))
+provisos (
+  Mul#(byte_sz, BitsPerByte, n)
+);
 
-  RegFile#(Bit#(IStreamIdxSz), Bit#(n)) mem <- mkRegFileFullLoad(file);
+  RegFile#(Bit#(IStreamIdxSz), Bit#(n)) mem <- mkRegFileLoad(file, 0, fromInteger(size/valueOf(byte_sz) - 1));
   Reg#(Bit#(IStreamIdxSz)) counter <- mkReg(0);
 
   rule checkInst;

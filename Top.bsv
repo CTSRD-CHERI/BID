@@ -130,7 +130,7 @@ module top ();
 
   MyArchState s <- initArchState;
   MyWorld w <- initWorld;
-  InstStream#(32) instStream <- mkInstStream("test-prog.hex");
+  InstStream#(32) instStream <- mkInstStream("test-prog.hex", 1024);
 
   // instanciating simulator
   mkISASim(instStream, s, w, list(mkBaseISA));
