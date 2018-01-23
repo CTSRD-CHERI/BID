@@ -47,7 +47,7 @@ instance World#(MyWorld);
 
   module initWorld (MyWorld);
     MyWorld w;
-    w.mem <- mkMem(8192);
+    w.mem <- mkSimpleMem(8192);
     return w;
   endmodule
 

@@ -39,6 +39,10 @@ typedef struct {
   Bit#(n) val;
 } BitPO#(numeric type n);
 
+function Bit#(TAdd#(n,1)) readBitPO (BitPO#(n) x);
+  return (x.val == 0) ? fromInteger(valueOf(TExp#(n))) : zeroExtend(x.val);
+endfunction
+
 instance Literal#(BitPO#(n));
   function BitPO#(n) fromInteger (Integer x);
     if (x > 0 && x < valueOf(TExp#(n)))
@@ -52,9 +56,11 @@ instance Literal#(BitPO#(n));
   endfunction
 endinstance
 
-function Bit#(TAdd#(n,1)) readBitPO (BitPO#(n) x);
-  return (x.val == 0) ? fromInteger(valueOf(TExp#(n))) : zeroExtend(x.val);
-endfunction
+instance FShow#(BitPO#(n));
+  function Fmt fshow(BitPO#(n) x);
+    return $format("%0d", readBitPO(x));
+  endfunction
+endinstance
 
 // How many bits per byte
 typedef 8 BitsPerByte;
@@ -71,7 +77,7 @@ typedef union tagged {
     Bit#(`DATA_BYTES) byteEnable;
     data_t data;
   } WriteReq;
-} MemReq#(type idx_t, type data_t);
+} MemReq#(type idx_t, type data_t) deriving (FShow);
 
 // Mem response
 typedef union tagged {
