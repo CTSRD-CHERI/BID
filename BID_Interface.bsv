@@ -2,14 +2,16 @@
 
 import Printf :: *;
 
+import BID_ModuleCollect :: *;
+
 ///////////////////////////
 // Simulator state types //
 ////////////////////////////////////////////////////////////////////////////////
 
 typeclass ArchState#(type a);
-  module initArchState(a);
-  function Fmt lightReport (a s);
-  function Fmt fullReport (a s);
+  module [ArchStateDefModule#(n)] initArchState(a#(n));
+  function Fmt lightReport (a#(n) s);
+  function Fmt fullReport (a#(n) s);
 endtypeclass
 
 typeclass World#(type a);

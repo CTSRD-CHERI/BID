@@ -13,24 +13,24 @@ import BID :: *;
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef struct {
-  Vector#(32,Reg#(Bit#(32))) regfile;
-  Reg#(Bit#(32)) pc;
-} MyArchState;
+  Vector#(32,Reg#(Bit#(n))) regfile;
+  Reg#(Bit#(n)) pc;
+} MyArchState#(numeric type n);
 
 instance ArchState#(MyArchState);
 
-  module initArchState (MyArchState);
-    MyArchState s;
+  module [ArchStateDefModule#(n)] initArchState (MyArchState#(n));
+    MyArchState#(n) s;
     s.regfile <- mkRegFileZ;
-    s.pc <- mkReg(0);
+    s.pc <- mkPC;
     return s;
   endmodule
 
-  function Fmt lightReport (MyArchState s);
+  function Fmt lightReport (MyArchState#(n) s);
     return $format("pc = 0x%0x", s.pc);
   endfunction
 
-  function Fmt fullReport (MyArchState s);
+  function Fmt fullReport (MyArchState#(n) s);
     return (
       $format("regfile %s \n", map(readReg,s.regfile)) +
       $format("pc = 0x%0x", s.pc)
@@ -53,12 +53,12 @@ instance World#(MyWorld);
 
 endinstance
 
-function Action pcEpilogue(MyArchState s, MyWorld w) =
+function Action pcEpilogue(MyArchState#(32) s, MyWorld w) =
   action
     $display("---------- epilogue @%0t ----------", $time);
     Bit#(32) tmpPC = s.pc + 4;
     s.pc <= tmpPC;
-    $display("s.pc <= 0x%0x", tmpPC);
+    $display("@%0t, s.pc <= 0x%0x", $time, tmpPC);
   endaction;
 
 ////////////////////////////
@@ -66,7 +66,7 @@ function Action pcEpilogue(MyArchState s, MyWorld w) =
 ////////////////////////////////////////////////////////////////////////////////
 
 // These instructions and their encoding are borrowed from the RISC-V I ISA
-module [InstrDefModule#(32)] mkBaseISA#(MyArchState s, MyWorld w) ();
+module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, MyWorld w) ();
 
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) =
     action
@@ -117,6 +117,7 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState s, MyWorld w) ();
       Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
       w.mem.sendReq(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile[rs2]});
       $display("sb %0d, %0d, %0d", rs1, rs2, imm);
+      pcEpilogue(s,w);
     endaction;
   defineInstr(pat(v, v, v, n(3'b000), v, n(7'b0100011)),instrSB);
 
@@ -128,11 +129,10 @@ endmodule
 
 module top ();
 
-  MyArchState s <- initArchState;
   MyWorld w <- initWorld;
   InstStream#(32) instStream <- mkInstStream("test-prog.hex", 1024);
 
   // instanciating simulator
-  mkISASim(instStream, s, w, list(mkBaseISA));
+  mkISASim(instStream, w, initArchState, list(mkBaseISA));
 
 endmodule

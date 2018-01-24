@@ -1,44 +1,15 @@
 // 2018, Alexandre Joannou, University of Cambridge
 
-import BitPat :: *;
-
 import List :: *;
 import FIFO :: *;
+import Assert :: *;
+import Printf :: *;
 import ModuleCollect :: *;
 
+import BitPat :: *;
+
 import BID_Interface :: *;
-
-///////////////////////////////////
-// Types to harvest instructions //
-////////////////////////////////////////////////////////////////////////////////
-
-typedef function GuardedActions f(Bit#(n) subject) InstrDefn#(numeric type n);
-typedef ModuleCollect#(InstrDefn#(n), ifc) InstrDefModule#(numeric type n, type ifc);
-typedef InstrDefModule#(32, ifc) Instr32DefModule#(type ifc);
-
-typeclass DefineInstr#(type a);
-  module [InstrDefModule#(n)] defineInstr#(BitPat#(n, t, a) p, function t f)();
-endtypeclass
-
-instance DefineInstr#(Action);
-  module [InstrDefModule#(n)] defineInstr#(BitPat#(n, t, Action) p, function t f)();
-    function flipPat(x);
-      Tuple2#(Bool, Action) res = p(x, f);
-      return GuardedActions { guard: tpl_1(res), body: List::cons(tpl_2(res), Nil) };
-    endfunction
-    addToCollection(flipPat);
-  endmodule
-endinstance
-
-instance DefineInstr#(List#(Action));
-  module [InstrDefModule#(n)] defineInstr#(BitPat#(n, t, List#(Action)) p, function t f)();
-    function flipPat(x);
-      Tuple2#(Bool, List#(Action)) res = p(x, f);
-      return GuardedActions { guard: tpl_1(res), body: tpl_2(res) };
-    endfunction
-    addToCollection(flipPat);
-  endmodule
-endinstance
+import BID_ModuleCollect :: *;
 
 //////////////////////////
 // ISA simulator engine //
@@ -46,16 +17,25 @@ endinstance
 
 module [Module] mkISASim#(
   InstStream#(n) instStream,
-  archstate_t s,
   world_t w,
-  List#(function InstrDefModule#(n, ifc) mkMod (archstate_t st, world_t wo)) ms) ()
+  ArchStateDefModule#(m, archstate_t#(m)) mstate,
+  List#(function InstrDefModule#(n, ifc) mkMod (archstate_t#(m) st, world_t wo)) ms) ()
   provisos (ArchState#(archstate_t), World#(world_t));
 
   // local state
   Reg#(UInt#(8)) stepCounter <- mkReg(0);
+  PulseWire fetchNextInstr <- mkPulseWire;
+
+  // harvest state
+  IWithCollection#(ArchStateDfn#(m), archstate_t#(m)) s <- exposeCollection(mstate);
+  let archPCs = concat(map(getArchPC, s.collection()));
+  let lenArchPCs = length(archPCs);
+  //XXX must build with -check-assert to detect this error !
+  staticAssert(lenArchPCs == 1, sprintf("There must be exactly one architectural PC defined with mkPC (%0d detected)", lenArchPCs));
+  let archPC = head(archPCs);
 
   // harvest instructions
-  function applyStateAndWorld (g) = g(s,w);
+  function applyStateAndWorld (g) = g(s.device, w);
   let cs <- mapM(exposeCollection,List::map(applyStateAndWorld, ms));
   function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
   List#(InstrDefn#(n)) instrDefs = concat(map(getItems, cs));
@@ -68,13 +48,14 @@ module [Module] mkISASim#(
     Integer n1 = length(acts.body);
     for (Integer j = 0; j < n1; j = j + 1) begin
       let body = List::head(acts.body);
-      rule generatedRule (stepCounter == fromInteger(j) && acts.guard);
+      rule instr_rule (stepCounter == fromInteger(j) && acts.guard);
         $display("--------------- step %0d @%0t --------------", stepCounter, $time);
-        $display(lightReport(s));
+        $display(lightReport(s.device));
         body;
         if (stepCounter == fromInteger(n1 - 1)) begin
           stepCounter <= 0;
           instStream.nextInst();
+          fetchNextInstr.send();
           $display("==============================================");
         end else stepCounter <= fromInteger(j + 1);
       endrule
@@ -82,5 +63,11 @@ module [Module] mkISASim#(
     end
     instrDefs = List::tail(instrDefs);
   end
+
+  // rule to fetch the next instruction
+  rule fetch_next_instr (fetchNextInstr);
+    $display("@%0t -- fetching next instr from 0x%0x", $time, archPC);
+    $display("==============================================");
+  endrule
 
 endmodule
