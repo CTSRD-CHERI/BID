@@ -47,7 +47,7 @@ instance World#(MyWorld);
 
   module initWorld (MyWorld);
     MyWorld w;
-    w.mem <- mkSimpleMem(8192);
+    w.mem <- mkSimpleMem(2048);
     return w;
   endmodule
 
@@ -130,9 +130,9 @@ endmodule
 module top ();
 
   MyWorld w <- initWorld;
-  InstStream#(32) instStream <- mkInstStream("test-prog.hex", 1024);
+  IMem#(Bit#(32), Bit#(32)) imem <- mkSimpleInstMem(1024, "test-prog.hex");
 
   // instanciating simulator
-  mkISASim(instStream, w, initArchState, list(mkBaseISA));
+  mkISASim(imem, w, initArchState, list(mkBaseISA));
 
 endmodule

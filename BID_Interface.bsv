@@ -22,19 +22,6 @@ endtypeclass
 // Interface types //
 ////////////////////////////////////////////////////////////////////////////////
 
-//////////////////////////////////
-// Instruction Stream interface //
-//////////////////////////////////
-
-interface InstStream#(numeric type n);
-  method Bit#(n) peekInst();
-  method Action nextInst();
-endinterface
-
-//////////////////////
-// Memory interface //
-//////////////////////
-
 // Type to hold an n-bit value initialized by a literal starting
 // at 1 and up to 2^n rather than 0 to 2^n-1
 typedef struct {
@@ -63,6 +50,28 @@ instance FShow#(BitPO#(n));
     return $format("%0d", readBitPO(x));
   endfunction
 endinstance
+
+//////////////////////////////////
+// Instruction Stream interface //
+//////////////////////////////////
+
+interface InstStream#(numeric type n);
+  method Bit#(n) peekInst();
+  method Action nextInst();
+endinterface
+
+//////////////////////////////////
+// Instruction memory interface //
+//////////////////////////////////
+
+interface IMem#(type idx_t, type inst_t);
+  method Action fetchInst (idx_t addr);
+  method inst_t nextInst ();
+endinterface
+
+//////////////////////
+// Memory interface //
+//////////////////////
 
 // How many bits per byte
 typedef 8 BitsPerByte;

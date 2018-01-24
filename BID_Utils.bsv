@@ -2,6 +2,7 @@
 
 import Vector :: *;
 import RegFile :: *;
+import BRAMCore :: *;
 import FIFO :: *;
 import SpecialFIFOs :: *;
 
@@ -312,6 +313,27 @@ provisos(
     $display("mem @%0t -- ", $time, fshow(rsp));
     return rsp;
   endmethod
+
+endmodule
+
+///////////////////////////////
+// Simple instruction memory //
+////////////////////////////////////////////////////////////////////////////////
+
+// size expressed in bytes
+module mkSimpleInstMem#(Integer size, String file) (IMem#(idx_t, inst_t))
+provisos(
+  Bits#(idx_t, idx_sz),
+  Bits#(inst_t, inst_sz),
+  Div#(inst_sz, BitsPerByte, inst_byte_sz),
+  Add#(iidx_sz, TLog#(inst_byte_sz), idx_sz)
+);
+
+  BRAM_PORT#(Bit#(iidx_sz), inst_t) mem <- mkBRAMCore1Load(size/valueOf(inst_byte_sz), False, file, False);
+
+  method Action fetchInst (idx_t addr) = mem.put(False, truncateLSB(pack(addr)), ?);
+
+  method inst_t nextInst = mem.read;
 
 endmodule
 
