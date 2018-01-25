@@ -10,6 +10,7 @@ import BitPat :: *;
 
 import BID_Interface :: *;
 import BID_ModuleCollect :: *;
+import BID_SimUtils :: *;
 
 //////////////////////////
 // ISA simulator engine //
@@ -31,6 +32,7 @@ provisos (
   Reg#(UInt#(8)) stepCounter <- mkReg(0);
   PulseWire fetchNextInstr <- mkPulseWire;
   Reg#(Bool) isReset <- mkReg(True);
+  Reg#(UInt#(64)) instCommited <- mkReg(0);
 
   // harvest state
   IWithCollection#(ArchStateDfn#(n), archstate_t#(n)) s <- exposeCollection(mstate);
@@ -60,6 +62,7 @@ provisos (
         body;
         if (stepCounter == fromInteger(n1 - 1)) begin
           stepCounter <= 0;
+          instCommited <= instCommited + 1;
           fetchNextInstr.send();
           $display("==============================================");
         end else stepCounter <= fromInteger(j + 1);
@@ -69,16 +72,32 @@ provisos (
     instrDefs = List::tail(instrDefs);
   end
 
+  // clear reseet after first cycle
+  rule clear_reset (isReset);
+    isReset <= False;
+  endrule
+
   // rule to fetch the next instruction
+  rule fetch_reset (isReset);
+    imem.fetchInst(unpack(archPC));
+  endrule
   rule fetch_next_instr (!isReset && fetchNextInstr);
     imem.fetchInst(unpack(archPC));
     $display("@%0t -- fetching next instr from 0x%0x", $time, archPC);
     $display("==============================================");
   endrule
 
-  rule fetch_reset (isReset);
-    isReset <= False;
-    imem.fetchInst(unpack(archPC));
-  endrule
+  // print sim speed
+  if (genC) begin
+    Reg#(UInt#(64)) startTime <- mkReg(0);
+    rule sim_reset (isReset);
+      startTime <= unpack(sysTime);
+    endrule
+    rule sim_speed (pack(instCommited)[12:0] == 0);
+      UInt#(64) t = unpack(sysTime) - startTime;
+      UInt#(64) kips = (t > 0) ? (instCommited / 1000) / t : 0;
+      $display("(%0d kips) executed %0d instructions in %0d seconds ", kips, instCommited, t);
+    endrule
+  end
 
 endmodule
