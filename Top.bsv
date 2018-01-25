@@ -55,10 +55,10 @@ endinstance
 
 function Action pcEpilogue(MyArchState#(32) s, MyWorld w) =
   action
-    $display("---------- epilogue @%0t ----------", $time);
+    printTLog("--------------- epilogue --------------");
     Bit#(32) tmpPC = s.pc + 4;
     s.pc <= tmpPC;
-    $display("@%0t, s.pc <= 0x%0x", $time, tmpPC);
+    printTLog($format("s.pc <= 0x%0x", tmpPC));
   endaction;
 
 ////////////////////////////
@@ -70,8 +70,8 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, MyWorld w) ();
 
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) =
     action
-      $display("add %0d, %0d, %0d", rd, rs1, rs2);
-      $display("regfile[%0d] <= %0d", rd, s.regfile[rs1] + s.regfile[rs2]);
+      printTLog($format("add %0d, %0d, %0d", rd, rs1, rs2));
+      printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + s.regfile[rs2]));
       s.regfile[rd] <= s.regfile[rs1] + s.regfile[rs2];
       pcEpilogue(s,w);
     endaction;
@@ -79,8 +79,8 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, MyWorld w) ();
 
   function Action instrADDI(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) =
     action
-      $display("addi %0d, %0d, %0d", rd, rs1, imm);
-      $display("regfile[%0d] <= %0d", rd, s.regfile[rs1] + signExtend(imm));
+      printTLog($format("addi %0d, %0d, %0d", rd, rs1, imm));
+      printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + signExtend(imm)));
       s.regfile[rd] <= s.regfile[rs1] + signExtend(imm);
       pcEpilogue(s,w);
     endaction;
@@ -91,19 +91,19 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, MyWorld w) ();
       Bit#(32) imm = {signExtend(imm20),imm19_12,imm11,imm10_1,1'b0};
       s.pc <= s.pc + imm;
       s.regfile[rd] <= s.pc + 4;
-      $display("jal %0d, %0d", rd, imm);
+      printTLog($format("jal %0d, %0d", rd, imm));
     endaction;
   defineInstr(pat(v, v, v, v, v, n(7'b1101111)),instrJAL);
 
   function List#(Action) instrLB(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) =
     list(
       action
-        $display("lb %0d, %0d, %0d - step 1", rd, rs1, imm);
+        printTLog($format("lb %0d, %0d, %0d - step 1", rd, rs1, imm));
         Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
         w.mem.sendReq(tagged ReadReq {addr: addr, numBytes: 1});
       endaction,
       action
-        $display("lb %0d, %0d, %0d - step 2", rd, rs1, imm);
+        printTLog($format("lb %0d, %0d, %0d - step 2", rd, rs1, imm));
         let rsp <- w.mem.getRsp();
         case (rsp) matches tagged ReadRsp .r: s.regfile[rd] <= r; endcase
         pcEpilogue(s,w);
@@ -116,7 +116,7 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, MyWorld w) ();
       Bit#(32) imm = {signExtend(imm11_5), imm4_0};
       Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
       w.mem.sendReq(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile[rs2]});
-      $display("sb %0d, %0d, %0d", rs1, rs2, imm);
+      printTLog($format("sb %0d, %0d, %0d", rs1, rs2, imm));
       pcEpilogue(s,w);
     endaction;
   defineInstr(pat(v, v, v, n(3'b000), v, n(7'b0100011)),instrSB);

@@ -57,14 +57,14 @@ provisos (
     for (Integer j = 0; j < n1; j = j + 1) begin
       let body = List::head(acts.body);
       rule instr_rule (!isReset && stepCounter == fromInteger(j) && acts.guard);
-        $display("--------------- step %0d @%0t --------------", stepCounter, $time);
-        $display(lightReport(s.device));
+        printTLogPlusArgs("BID_Core", $format("-------------------- step %0d ------------------", stepCounter));
+        printLogPlusArgs("BID_Core", lightReport(s.device));
         body;
         if (stepCounter == fromInteger(n1 - 1)) begin
           stepCounter <= 0;
           instCommited <= instCommited + 1;
           fetchNextInstr.send();
-          $display("==============================================");
+          printLogPlusArgs("BID_Core", "==============================================");
         end else stepCounter <= fromInteger(j + 1);
       endrule
       acts.body = List::tail(acts.body);
@@ -83,8 +83,8 @@ provisos (
   endrule
   rule fetch_next_instr (!isReset && fetchNextInstr);
     imem.fetchInst(unpack(archPC));
-    $display("@%0t -- fetching next instr from 0x%0x", $time, archPC);
-    $display("==============================================");
+    printTLogPlusArgs("BID_Core", $format("fetching next instr from 0x%0x", archPC));
+    printLogPlusArgs("BID_Core", "==============================================");
   endrule
 
   // print sim speed
@@ -96,7 +96,7 @@ provisos (
     rule sim_speed (pack(instCommited)[12:0] == 0);
       UInt#(64) t = unpack(sysTime) - startTime;
       UInt#(64) kips = (t > 0) ? (instCommited / 1000) / t : 0;
-      $display("(%0d kips) executed %0d instructions in %0d seconds ", kips, instCommited, t);
+      printPlusArgs("BID_kips", $format("(%0d kips) executed %0d instructions in %0d seconds ", kips, instCommited, t));
     endrule
   end
 

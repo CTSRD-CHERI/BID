@@ -1,8 +1,15 @@
 # BSV compiler flags
-BITPATDIR=/home/aj443/devstuff/BitPat
-BSVPATH=+:$(BITPATDIR)
+BITPATDIR = /home/aj443/devstuff/BitPat
+BSVPATH = +:$(BITPATDIR)
 BSC = bsc
 BSCFLAGS = -p $(BSVPATH) -check-assert
+ifdef NO_LOGS
+BSCFLAGS += -D NO_LOGS
+endif
+# Bluespec is not compatible with gcc > 4.9
+# This is actually problematic when using $test$plusargs
+CC = gcc-4.9
+CXX = g++-4.9
 
 # Top level module
 TOPFILE = Top.bsv
@@ -13,7 +20,7 @@ sim: $(TOPMOD)
 
 $(TOPMOD): *.bsv *.c
 	$(BSC) $(BSCFLAGS) -sim -g $(TOPMOD) -u $(TOPFILE)
-	$(BSC) $(BSCFLAGS) -sim -o $(TOPMOD) -e $(TOPMOD) *.c
+	CC=$(CC) CXX=$(CXX) $(BSC) $(BSCFLAGS) -sim -o $(TOPMOD) -e $(TOPMOD) *.c
 
 verilog: *.bsv
 	$(BSC) $(BSCFLAGS) -verilog -g $(TOPMOD) -u $(TOPFILE)

@@ -7,6 +7,7 @@ import FIFO :: *;
 import SpecialFIFOs :: *;
 
 import BID_Interface :: *;
+import BID_SimUtils :: *;
 
 // Nice friendly list constructor lifted from Bluecheck's sources:
 // https://github.com/CTSRD-CHERI/bluecheck.git
@@ -100,7 +101,7 @@ provisos(
   //////////////////////////////////////////////////////////////////////////////
 
   method Action sendReq (MemReq#(idx_t, data_t) req);
-    $display("simple mem @%0t -- ", $time, fshow(req));
+    printTLogPlusArgs("BID_Utils", $format("simple mem ", fshow(req)));
     case (req) matches
       tagged ReadReq .r: begin
         // get internal index and byte offset
@@ -110,13 +111,11 @@ provisos(
         function getData(i) = mem[i].sub((fromInteger(i) < offset) ? idx + 1 : idx);
         `DATAVEC data = genWith(getData);
         Bit#(TAdd#(offset_sz, 1)) rotateAmnt = fromInteger(valueOf(data_byte_sz)) - zeroExtend(offset);
-        $display("before rotate by %0d = 0x%0x", rotateAmnt, data);
         data = rotateBy(data, unpack(truncate(rotateAmnt)));
         // mask usefull subset of data and return
-        $display("before mask = 0x%0x",data);
         function maskData (i) = (fromInteger(i) < readBitPO(r.numBytes)) ? data[i] : 0;
         readRspFIFO.enq(genWith(maskData));
-        $display("simple mem @%0t -- reading 0x%0x @ 0x%0x", $time, data, r.addr);
+        printTLogPlusArgs("BID_Utils", $format("simple mem -- reading 0x%0x @ 0x%0x", data, r.addr));
       end
       tagged WriteReq .w: begin
         // get internal index and byte offset
@@ -131,7 +130,7 @@ provisos(
           if (unpack(be[i]))
             mem[i].upd((fromInteger(i) < offset) ? idx + 1 : idx, new_data[i]);
         end
-        $display("simple mem @%0t -- writing 0x%0x @ 0x%0x", $time, pack(new_data), w.addr);
+        printTLogPlusArgs("BID_Utils", $format("simple mem -- writing 0x%0x @ 0x%0x", pack(new_data), w.addr));
       end
     endcase
   endmethod
@@ -139,7 +138,7 @@ provisos(
   method ActionValue#(MemRsp#(data_t)) getRsp ();
     MemRsp#(data_t) rsp = tagged ReadRsp unpack(pack(readRspFIFO.first()));
     readRspFIFO.deq();
-    $display("simple mem @%0t -- ", $time, fshow(rsp));
+    printTLogPlusArgs("BID_Utils", $format("simple mem -- ", fshow(rsp)));
     return rsp;
   endmethod
 
@@ -359,7 +358,7 @@ provisos (
   Reg#(Bit#(IStreamIdxSz)) counter <- mkReg(0);
 
   rule checkInst;
-    $display("instr stream @%0t -- inst %0d = 0x%0x", $time, counter, mem.sub(counter));
+    printTLogPlusArgs("BID_Utils", $format("instr stream -- inst %0d = 0x%0x", counter, mem.sub(counter)));
   endrule
 
   method Bit#(n) peekInst() = mem.sub(counter);
