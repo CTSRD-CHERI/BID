@@ -9,7 +9,7 @@ import BID_ModuleCollect :: *;
 ////////////////////////////////////////////////////////////////////////////////
 
 typeclass ArchState#(type a);
-  module [ArchStateDefModule#(n)] initArchState(a#(n));
+  module [ArchStateDefModule#(n)] mkArchState(a#(n));
   function Fmt lightReport (a#(n) s);
   function Fmt fullReport (a#(n) s);
 endtypeclass

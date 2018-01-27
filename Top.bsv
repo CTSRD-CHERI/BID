@@ -19,7 +19,7 @@ typedef struct {
 
 instance ArchState#(MyArchState);
 
-  module [ArchStateDefModule#(n)] initArchState (MyArchState#(n));
+  module [ArchStateDefModule#(n)] mkArchState (MyArchState#(n));
     MyArchState#(n) s;
     s.regfile <- mkRegFileZ;
     s.pc <- mkPC;
@@ -133,6 +133,6 @@ module top ();
   IMem#(Bit#(32), Bit#(32)) imem <- mkSimpleInstMem(1024, "test-prog.hex");
 
   // instanciating simulator
-  mkISASim(imem, w, initArchState, list(mkBaseISA));
+  mkISASim(imem, w, mkArchState, list(mkBaseISA));
 
 endmodule
