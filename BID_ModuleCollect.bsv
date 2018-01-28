@@ -41,8 +41,7 @@ provisos(
   Arith#(a_type)
 );
   Reg#(a_type) r <- mkReg(0);
-  Action inc = action r <= r + 1; endaction;
-  ArchStateDfn#(n) element = tagged OnInstCommit inc;
+  ArchStateDfn#(n) element = tagged OnInstCommit action r <= r + 1; endaction;
   addToCollection(element);
   method a_type _read() = r;
   method Action _write(a_type v);

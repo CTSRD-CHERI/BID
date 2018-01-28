@@ -67,13 +67,24 @@ provisos (
           stepCounter <= 0;
           instCommitted <= instCommitted + 1;
           instCommitting.send();
-          printLogPlusArgs("BID_Core", "==============================================");
         end else stepCounter <= fromInteger(j + 1);
       endrule
       acts.body = List::tail(acts.body);
     end
     instrDefs = List::tail(instrDefs);
   end
+
+  // general rule triggered on instruction commit
+  rule on_inst_commit (instCommitting);
+    printTLogPlusArgs("BID_Core", $format("Committing instruction rule"));
+    //let _ <- mapM_(id,onInstCommits);
+    List#(Action) as = onInstCommits;
+    for (Integer i = 0; i < onInstCommitsLen; i = i + 1) begin
+      head(as);
+      as = tail(as);
+    end
+    printLogPlusArgs("BID_Core", "==============================================");
+  endrule
 
   // clear reseet after first cycle
   rule clear_reset (isReset);
@@ -89,15 +100,6 @@ provisos (
     imem.fetchInst(unpack(archPC));
     printTLogPlusArgs("BID_Core", $format("fetching next instr from 0x%0x", archPC));
     printLogPlusArgs("BID_Core", "==============================================");
-  endrule
-  // general rule triggered on instruction commit
-  rule on_inst_commit (instCommitting);
-    //let _ <- mapM_(id,onInstCommits);
-    List#(Action) as = onInstCommits;
-    for (Integer i = 0; i < onInstCommitsLen; i = i + 1) begin
-      head(as);
-      as = tail(as);
-    end
   endrule
 
   // print sim speed
