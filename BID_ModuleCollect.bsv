@@ -5,18 +5,23 @@ import BitPat :: *;
 import List :: *;
 import ModuleCollect :: *;
 
+import BID_SimUtils :: *;
+
 //////////////////////////////////////////
 // Types to harvest architectural state //
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef union tagged {
   Bit#(n) ArchPC;
+  Action OnInstCommit;
 } ArchStateDfn#(numeric type n);
-
-function List#(Bit#(m)) getArchPC (ArchStateDfn#(m) l) =
-  l matches tagged ArchPC .x ? cons(x, Nil) : Nil;
-
+function List#(Bit#(m)) getArchPC (ArchStateDfn#(m) e) =
+  e matches tagged ArchPC .x ? cons(x, Nil) : Nil;
+function List#(Action) getOnInstCommit (ArchStateDfn#(m) e) =
+  e matches tagged OnInstCommit .x ? cons(x, Nil) : Nil;
 typedef ModuleCollect#(ArchStateDfn#(n), ifc) ArchStateDefModule#(numeric type n, type ifc);
+
+////////////////////////////////////////////////////////////////////////////////
 
 module [ArchStateDefModule#(n)] mkPC (Reg#(a_type))
 provisos(
@@ -26,6 +31,23 @@ provisos(
   Reg#(a_type) r[2] <- mkCReg(2,0);
   addToCollection(tagged ArchPC pack(r[1]));
   return r[0];
+endmodule
+
+////////////////////////////////////////////////////////////////////////////////
+
+module [ArchStateDefModule#(n)] mkCommittedInstCnt (Reg#(a_type))
+provisos(
+  Bits#(a_type, a_type_sz),
+  Arith#(a_type)
+);
+  Reg#(a_type) r <- mkReg(0);
+  Action inc = action r <= r + 1; endaction;
+  ArchStateDfn#(n) element = tagged OnInstCommit inc;
+  addToCollection(element);
+  method a_type _read() = r;
+  method Action _write(a_type v);
+    printLog($format("WARNING - ignoring write of %0d to an inst counter", v));
+  endmethod
 endmodule
 
 ///////////////////////////////////

@@ -15,6 +15,7 @@ import BID :: *;
 typedef struct {
   Vector#(32,Reg#(Bit#(n))) regfile;
   Reg#(Bit#(n)) pc;
+  Reg#(Bit#(n)) instCnt;
 } MyArchState#(numeric type n);
 
 instance ArchState#(MyArchState);
@@ -23,17 +24,18 @@ instance ArchState#(MyArchState);
     MyArchState#(n) s;
     s.regfile <- mkRegFileZ;
     s.pc <- mkPC;
+    s.instCnt <- mkCommittedInstCnt;
     return s;
   endmodule
 
   function Fmt lightReport (MyArchState#(n) s);
-    return $format("pc = 0x%0x", s.pc);
+    return $format("pc = 0x%0x, instCnt = %0d", s.pc, s.instCnt);
   endfunction
 
   function Fmt fullReport (MyArchState#(n) s);
     return (
       $format("regfile %s \n", map(readReg,s.regfile)) +
-      $format("pc = 0x%0x", s.pc)
+      $format("pc = 0x%0x, instCnt = %0d", s.pc, s.instCnt)
     );
   endfunction
 
@@ -58,6 +60,7 @@ function Action pcEpilogue(MyArchState#(32) s, MyWorld w) =
     printTLog("--------------- epilogue --------------");
     Bit#(32) tmpPC = s.pc + 4;
     s.pc <= tmpPC;
+    s.instCnt <= 666;
     printTLog($format("s.pc <= 0x%0x", tmpPC));
   endaction;
 
