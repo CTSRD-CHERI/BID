@@ -4,7 +4,6 @@ import Vector :: *;
 import RegFile :: *;
 import BRAMCore :: *;
 import FIFO :: *;
-import SpecialFIFOs :: *;
 
 import BID_Interface :: *;
 import BID_SimUtils :: *;
@@ -95,7 +94,7 @@ provisos(
 `define DATAVEC Vector#(data_byte_sz, Bit#(BitsPerByte))
 
   Vector#(data_byte_sz, RegFile#(Bit#(idx_sz), `BYTE)) mem <- replicateM(mkRegFile(0, fromInteger(size/valueOf(TMul#(data_byte_sz,data_byte_sz)) - 1)));
-  FIFO#(`DATAVEC) readRspFIFO <- mkSizedFIFO(1);
+  FIFO#(`DATAVEC) readRspFIFO <- mkFIFO1;
 
   // Interface
   //////////////////////////////////////////////////////////////////////////////
