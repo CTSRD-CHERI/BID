@@ -53,12 +53,14 @@ provisos (
   Integer n0 = length(instrDefs);
   for (Integer i = 0; i < n0; i = i + 1) begin
     let f = List::head(instrDefs);
-    GuardedActions acts = f(pack(mem.inst.nextInst));
+    Bit#(inst_sz) inst = pack(mem.inst.nextInst);
+    GuardedActions acts = f(inst);
     Integer n1 = length(acts.body);
     for (Integer j = 0; j < n1; j = j + 1) begin
       let body = List::head(acts.body);
       rule instr_rule (!isReset && stepCounter == fromInteger(j) && acts.guard);
         printTLogPlusArgs("BID_Core", $format("-------------------- step %0d ------------------", stepCounter));
+        printTLogPlusArgs("BID_Core", $format("inst: 0x%0x", inst));
         printLogPlusArgs("BID_Core", lightReport(s.device));
         body;
         if (stepCounter == fromInteger(n1 - 1)) begin

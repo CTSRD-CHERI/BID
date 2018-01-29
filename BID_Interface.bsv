@@ -26,7 +26,7 @@ endtypeclass
 // at 1 and up to 2^n rather than 0 to 2^n-1
 typedef struct {
   Bit#(n) val;
-} BitPO#(numeric type n);
+} BitPO#(numeric type n) deriving (Bits);
 
 function Bit#(TAdd#(n,1)) readBitPO (BitPO#(n) x);
   return (x.val == 0) ? fromInteger(valueOf(TExp#(n))) : zeroExtend(x.val);

@@ -1,5 +1,5 @@
 // This is a test program using RISC-V instruction encodings
-002101A3 // SB    2,  2,  3
+FE200FA3 // SB    2,  0,  4095
 00A50CB3 // ADD  25, 10, 10
 00210183 // LB    3,  2,  2
 00110193 // ADDI  3,  2,  1

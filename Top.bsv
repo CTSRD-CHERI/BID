@@ -127,14 +127,15 @@ endmodule
 
 module initMem (Mem#(Bit#(32), Bit#(32), Bit#(32)));
   let imem <- mkSimpleIMem(1024, "test-prog.hex");
-  let dmem <- mkSimpleDMem(2048);
+  let dmem <- mkSimpleDMem(4096);
   interface IMem inst = imem;
   interface DMem data = dmem;
 endmodule
 
 module top ();
 
-  Mem#(Bit#(32), Bit#(32), Bit#(32)) mem <- initMem;
+  //Mem#(Bit#(32), Bit#(32), Bit#(32)) mem <- initMem;
+  Mem#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkSharedMem(4096, "test-prog.hex");
 
   // instanciating simulator
   mkISASim(mem, mkArchState, list(mkBaseISA));
