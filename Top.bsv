@@ -98,6 +98,15 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, MyWorld w) ();
     endaction;
   defineInstr(pat(v, v, v, v, v, n(7'b1101111)),instrJAL);
 
+  function Action instrBEQ (Bit#(1) imm12, Bit#(6) imm10_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(4) imm4_1, Bit#(1) imm11) =
+    action
+      Bit#(32) imm = {signExtend(imm12),imm11,imm10_5,imm4_1,1'b0};
+      if (s.regfile[rs1] == s.regfile[rs2]) s.pc <= s.pc + imm;
+      else s.pc <= s.pc + 4;
+      printTLog($format("beq", rs1, rs2, imm));
+    endaction;
+  defineInstr(pat(v, v, v, v, n(3'b000), v, v, n(7'b1100011)), instrBEQ);
+
   function List#(Action) instrLB(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) =
     list(
       action
