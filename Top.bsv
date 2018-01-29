@@ -41,21 +41,7 @@ instance ArchState#(MyArchState);
 
 endinstance
 
-typedef struct {
-  DMem#(Bit#(32), Bit#(32)) mem;
-} MyWorld;
-
-instance World#(MyWorld);
-
-  module initWorld (MyWorld);
-    MyWorld w;
-    w.mem <- mkSimpleDMem(2048);
-    return w;
-  endmodule
-
-endinstance
-
-function Action pcEpilogue(MyArchState#(32) s, MyWorld w) =
+function Action pcEpilogue(MyArchState#(32) s) =
   action
     printTLog("--------------- epilogue --------------");
     Bit#(32) tmpPC = s.pc + 4;
@@ -69,14 +55,14 @@ function Action pcEpilogue(MyArchState#(32) s, MyWorld w) =
 ////////////////////////////////////////////////////////////////////////////////
 
 // These instructions and their encoding are borrowed from the RISC-V I ISA
-module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, MyWorld w) ();
+module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, DMem#(Bit#(32), Bit#(32)) mem) ();
 
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) =
     action
       printTLog($format("add %0d, %0d, %0d", rd, rs1, rs2));
       printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + s.regfile[rs2]));
       s.regfile[rd] <= s.regfile[rs1] + s.regfile[rs2];
-      pcEpilogue(s,w);
+      pcEpilogue(s);
     endaction;
   defineInstr(pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
 
@@ -85,7 +71,7 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, MyWorld w) ();
       printTLog($format("addi %0d, %0d, %0d", rd, rs1, imm));
       printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + signExtend(imm)));
       s.regfile[rd] <= s.regfile[rs1] + signExtend(imm);
-      pcEpilogue(s,w);
+      pcEpilogue(s);
     endaction;
   defineInstr(pat(v, v, n(3'b0), v, n(7'b0010011)),instrADDI);
 
@@ -112,13 +98,13 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, MyWorld w) ();
       action
         printTLog($format("lb %0d, %0d, %0d - step 1", rd, rs1, imm));
         Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
-        w.mem.sendReq(tagged ReadReq {addr: addr, numBytes: 1});
+        mem.sendReq(tagged ReadReq {addr: addr, numBytes: 1});
       endaction,
       action
         printTLog($format("lb %0d, %0d, %0d - step 2", rd, rs1, imm));
-        let rsp <- w.mem.getRsp();
+        let rsp <- mem.getRsp();
         case (rsp) matches tagged ReadRsp .r: s.regfile[rd] <= r; endcase
-        pcEpilogue(s,w);
+        pcEpilogue(s);
       endaction
     );
   defineInstr(pat(v, v, n(3'b000), v, n(7'b0000011)),instrLB);
@@ -127,9 +113,9 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, MyWorld w) ();
     action
       Bit#(32) imm = {signExtend(imm11_5), imm4_0};
       Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
-      w.mem.sendReq(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile[rs2]});
+      mem.sendReq(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile[rs2]});
       printTLog($format("sb %0d, %0d, %0d", rs1, rs2, imm));
-      pcEpilogue(s,w);
+      pcEpilogue(s);
     endaction;
   defineInstr(pat(v, v, v, n(3'b000), v, n(7'b0100011)),instrSB);
 
@@ -139,12 +125,18 @@ endmodule
 // Instanciate the ISA simulator //
 ////////////////////////////////////////////////////////////////////////////////
 
+module initMem (Mem#(Bit#(32), Bit#(32), Bit#(32)));
+  let imem <- mkSimpleIMem(1024, "test-prog.hex");
+  let dmem <- mkSimpleDMem(2048);
+  interface IMem inst = imem;
+  interface DMem data = dmem;
+endmodule
+
 module top ();
 
-  MyWorld w <- initWorld;
-  IMem#(Bit#(32), Bit#(32)) imem <- mkSimpleIMem(1024, "test-prog.hex");
+  Mem#(Bit#(32), Bit#(32), Bit#(32)) mem <- initMem;
 
   // instanciating simulator
-  mkISASim(imem, w, mkArchState, list(mkBaseISA));
+  mkISASim(mem, mkArchState, list(mkBaseISA));
 
 endmodule

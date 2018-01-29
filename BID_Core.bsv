@@ -17,15 +17,13 @@ import BID_SimUtils :: *;
 ////////////////////////////////////////////////////////////////////////////////
 
 module [Module] mkISASim#(
-  IMem#(imem_addr, inst) imem,
-  world_t w,
-  ArchStateDefModule#(n, archstate_t#(n)) mstate,
-  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t#(n) st, world_t wo)) ms) ()
+  Mem#(addr_t, inst_t, data_t) mem,
+  ArchStateDefModule#(addr_sz, archstate_t#(addr_sz)) mstate,
+  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t#(addr_sz) st, DMem#(addr_t, data_t) dmem)) ms) ()
 provisos (
   ArchState#(archstate_t),
-  World#(world_t),
-  Bits#(inst, inst_sz),
-  Bits#(imem_addr, n)
+  Bits#(inst_t, inst_sz),
+  Bits#(addr_t, addr_sz)
 );
 
   // local state
@@ -35,7 +33,7 @@ provisos (
   Reg#(UInt#(64)) instCommitted <- mkReg(0);
 
   // harvest state
-  IWithCollection#(ArchStateDfn#(n), archstate_t#(n)) s <- exposeCollection(mstate);
+  IWithCollection#(ArchStateDfn#(addr_sz), archstate_t#(addr_sz)) s <- exposeCollection(mstate);
   let archPCs = concat(map(getArchPC, s.collection()));
   let lenArchPCs = length(archPCs);
   //XXX must build with -check-assert to detect this error !
@@ -46,8 +44,8 @@ provisos (
   let onInstCommitsLen = length(onInstCommits);
 
   // harvest instructions
-  function applyStateAndWorld (g) = g(s.device, w);
-  let cs <- mapM(exposeCollection,List::map(applyStateAndWorld, ms));
+  function applyStateAndMem (g) = g(s.device, mem.data);
+  let cs <- mapM(exposeCollection,List::map(applyStateAndMem, ms));
   function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
   List#(InstrDefn#(inst_sz)) instrDefs = concat(map(getItems, cs));
 
@@ -55,7 +53,7 @@ provisos (
   Integer n0 = length(instrDefs);
   for (Integer i = 0; i < n0; i = i + 1) begin
     let f = List::head(instrDefs);
-    GuardedActions acts = f(pack(imem.nextInst));
+    GuardedActions acts = f(pack(mem.inst.nextInst));
     Integer n1 = length(acts.body);
     for (Integer j = 0; j < n1; j = j + 1) begin
       let body = List::head(acts.body);
@@ -93,11 +91,11 @@ provisos (
 
   // fetch instruction on reset
   rule fetch_reset (isReset);
-    imem.fetchInst(unpack(archPC));
+    mem.inst.fetchInst(unpack(archPC));
   endrule
   // fetch next instruction on instruction commit
   rule fetch_next_instr (!isReset && instCommitting);
-    imem.fetchInst(unpack(archPC));
+    mem.inst.fetchInst(unpack(archPC));
     printTLogPlusArgs("BID_Core", $format("fetching next instr from 0x%0x", archPC));
     printLogPlusArgs("BID_Core", "==============================================");
   endrule
