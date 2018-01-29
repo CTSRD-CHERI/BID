@@ -42,14 +42,14 @@ instance ArchState#(MyArchState);
 endinstance
 
 typedef struct {
-  Mem#(Bit#(32), Bit#(32)) mem;
+  DMem#(Bit#(32), Bit#(32)) mem;
 } MyWorld;
 
 instance World#(MyWorld);
 
   module initWorld (MyWorld);
     MyWorld w;
-    w.mem <- mkSimpleMem(2048);
+    w.mem <- mkSimpleDMem(2048);
     return w;
   endmodule
 
@@ -142,7 +142,7 @@ endmodule
 module top ();
 
   MyWorld w <- initWorld;
-  IMem#(Bit#(32), Bit#(32)) imem <- mkSimpleInstMem(1024, "test-prog.hex");
+  IMem#(Bit#(32), Bit#(32)) imem <- mkSimpleIMem(1024, "test-prog.hex");
 
   // instanciating simulator
   mkISASim(imem, w, mkArchState, list(mkBaseISA));

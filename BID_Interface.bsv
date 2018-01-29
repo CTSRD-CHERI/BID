@@ -51,6 +51,9 @@ instance FShow#(BitPO#(n));
   endfunction
 endinstance
 
+// How many bits per byte
+typedef 8 BitsPerByte;
+
 //////////////////////////////////
 // Instruction Stream interface //
 //////////////////////////////////
@@ -64,40 +67,46 @@ endinterface
 // Instruction memory interface //
 //////////////////////////////////
 
-interface IMem#(type idx_t, type inst_t);
-  method Action fetchInst (idx_t addr);
+interface IMem#(type addr_t, type inst_t);
+  method Action fetchInst (addr_t addr);
   method inst_t nextInst ();
 endinterface
 
-//////////////////////
-// Memory interface //
-//////////////////////
-
-// How many bits per byte
-typedef 8 BitsPerByte;
+///////////////////////////
+// Data memory interface //
+///////////////////////////
 
 // Mem request
 typedef union tagged {
 `define DATA_BYTES TDiv#(SizeOf#(data_t), BitsPerByte)
   struct {
-    idx_t addr;
+    addr_t addr;
     BitPO#(TLog#(`DATA_BYTES)) numBytes;
   } ReadReq;
   struct {
-    idx_t addr;
+    addr_t addr;
     Bit#(`DATA_BYTES) byteEnable;
     data_t data;
   } WriteReq;
-} MemReq#(type idx_t, type data_t) deriving (FShow);
+} DMemReq#(type addr_t, type data_t) deriving (FShow);
 
 // Mem response
 typedef union tagged {
   data_t ReadRsp;
   void Failure;
-} MemRsp#(type data_t) deriving (Bits, FShow);
+} DMemRsp#(type data_t) deriving (Bits, FShow);
 
 // Mem interface
-interface Mem#(type idx_t, type data_t);
-  method Action sendReq (MemReq#(idx_t, data_t) req);
-  method ActionValue#(MemRsp#(data_t)) getRsp ();
+interface DMem#(type addr_t, type data_t);
+  method Action sendReq (DMemReq#(addr_t, data_t) req);
+  method ActionValue#(DMemRsp#(data_t)) getRsp ();
+endinterface
+
+///////////////////////////
+// Full memory interface //
+///////////////////////////
+
+interface Mem#(type addr_t, type inst_t, type data_t);
+  interface DMem#(addr_t, data_t) data;
+  interface IMem#(addr_t, inst_t) inst;
 endinterface
