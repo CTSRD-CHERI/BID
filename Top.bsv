@@ -119,6 +119,17 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, DMem#(Bit#(32), Bit#
     endaction;
   defineInstr(pat(v, v, v, n(3'b000), v, n(7'b0100011)),instrSB);
 
+  function List#(Action) unkInst(Bit#(32) inst) = list(
+    action
+      printTLog($format("Unknown instruction 0x%0x", inst));
+      pcEpilogue(s);
+    endaction,
+    printTLog($format("bye"))
+  );
+  defineUnkInstr(unkInst);
+  // uncomment to test the assertion
+  //defineUnkInstr(unkInst);
+
 endmodule
 
 ///////////////////////////////////

@@ -29,11 +29,16 @@ provisos (
   // local state
   Reg#(UInt#(8)) stepCounter <- mkReg(0);
   PulseWire instCommitting <- mkPulseWire;
+  PulseWire doInstFetch <- mkPulseWire;
   Reg#(Bool) isReset <- mkReg(True);
   Reg#(UInt#(64)) instCommitted <- mkReg(0);
+  PulseWire instDecoded <- mkPulseWireOR;
+
+  // Peek at next instruction from imem
+  Bit#(inst_sz) inst = pack(mem.inst.nextInst);
 
   // harvest state
-  IWithCollection#(ArchStateDfn#(addr_sz), archstate_t#(addr_sz)) s <- exposeCollection(mstate);
+  IWithCollection#(ISAStateDfn#(addr_sz), archstate_t#(addr_sz)) s <- exposeCollection(mstate);
   let archPCs = concat(map(getArchPC, s.collection()));
   let lenArchPCs = length(archPCs);
   //XXX must build with -check-assert to detect this error !
@@ -47,31 +52,53 @@ provisos (
   function applyStateAndMem (g) = g(s.device, mem.data);
   let cs <- mapM(exposeCollection,List::map(applyStateAndMem, ms));
   function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
-  List#(InstrDefn#(inst_sz)) instrDefs = concat(map(getItems, cs));
+  let isaInstrDefs = concat(map(getItems, cs));
+  List#(InstrDefn#(inst_sz)) instrDefs = concat(map(getInstDef, isaInstrDefs));
+  let instrDefsLen = length(instrDefs);
+  //List#(List#(Action)) unkInstrDefs = concat(map(getUnkInstDef, isaInstrDefs));
+  let unkInstrDefs = concat(map(getUnkInstDef, isaInstrDefs));
+  let unkInstrDefsLen = length(unkInstrDefs);
+  //XXX must build with -check-assert to detect this error !
+  staticAssert(unkInstrDefsLen == 1, sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
+  List#(Action) unkInst = head(unkInstrDefs)(inst);
 
   // generate rules for instruction execution
-  Integer n0 = length(instrDefs);
-  for (Integer i = 0; i < n0; i = i + 1) begin
+  for (Integer i = 0; i < instrDefsLen; i = i + 1) begin
     let f = List::head(instrDefs);
-    Bit#(inst_sz) inst = pack(mem.inst.nextInst);
     GuardedActions acts = f(inst);
-    Integer n1 = length(acts.body);
-    for (Integer j = 0; j < n1; j = j + 1) begin
+    let nbSteps = length(acts.body);
+    for (Integer j = 0; j < nbSteps; j = j + 1) begin
       let body = List::head(acts.body);
       rule instr_rule (!isReset && stepCounter == fromInteger(j) && acts.guard);
+        instDecoded.send();
         printTLogPlusArgs("BID_Core", $format("-------------------- step %0d ------------------", stepCounter));
         printTLogPlusArgs("BID_Core", $format("inst: 0x%0x", inst));
         printLogPlusArgs("BID_Core", lightReport(s.device));
         body;
-        if (stepCounter == fromInteger(n1 - 1)) begin
+        if (stepCounter == fromInteger(nbSteps - 1)) begin
           stepCounter <= 0;
           instCommitted <= instCommitted + 1;
           instCommitting.send();
+          doInstFetch.send();
         end else stepCounter <= fromInteger(j + 1);
       endrule
       acts.body = List::tail(acts.body);
     end
     instrDefs = List::tail(instrDefs);
+  end
+
+  // generate rules for unknown instruction
+  let unkInstLen = length(unkInst);
+  for (Integer i = 0; i < unkInstLen; i = i + 1) begin
+    let body = List::head(unkInst);
+    rule unknown_instr_rule (!isReset && stepCounter == fromInteger(i) && ! instDecoded);
+      body;
+      if (stepCounter == fromInteger(unkInstLen - 1)) begin
+        stepCounter <= 0;
+        doInstFetch.send();
+      end else stepCounter <= fromInteger(i + 1);
+    endrule
+    unkInst = List::tail(unkInst);
   end
 
   // general rule triggered on instruction commit
@@ -96,7 +123,7 @@ provisos (
     mem.inst.fetchInst(unpack(archPC));
   endrule
   // fetch next instruction on instruction commit
-  rule fetch_next_instr (!isReset && instCommitting);
+  rule fetch_next_instr (!isReset && doInstFetch);
     mem.inst.fetchInst(unpack(archPC));
     printTLogPlusArgs("BID_Core", $format("fetching next instr from 0x%0x", archPC));
     printLogPlusArgs("BID_Core", "==============================================");

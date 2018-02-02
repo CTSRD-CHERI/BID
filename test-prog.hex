@@ -3,4 +3,5 @@ FE200FA3 // SB    2,  0,  4095
 00A50CB3 // ADD  25, 10, 10
 00210183 // LB    3,  2,  2
 00110193 // ADDI  3,  2,  1
+01010101
 FF1FF1EF // JAL   0, -16      <=== jumps back 4 instructions, to the beginning
