@@ -38,37 +38,47 @@ provisos (
   Bit#(inst_sz) inst = pack(mem.inst.nextInst);
 
   // harvest state
+  //////////////////////////////////////////////////////////////////////////////
   IWithCollection#(ISAStateDfn#(addr_sz), archstate_t#(addr_sz)) s <- exposeCollection(mstate);
+  // architectural PC
   let archPCs = concat(map(getArchPC, s.collection()));
   let lenArchPCs = length(archPCs);
   //XXX must build with -check-assert to detect this error !
   staticAssert(lenArchPCs == 1, sprintf("There must be exactly one architectural PC defined with mkPC (%0d detected)", lenArchPCs));
   let archPC = head(archPCs);
-  // harvest on inst commit actions
+  // on-instruction-commit actions
   let onInstCommits = concat(map(getOnInstCommit, s.collection()));
   let onInstCommitsLen = length(onInstCommits);
 
   // harvest instructions
+  //////////////////////////////////////////////////////////////////////////////
+  // apply state and mem, and get collections for each module
   function applyStateAndMem (g) = g(s.device, mem.data);
-  let cs <- mapM(exposeCollection,List::map(applyStateAndMem, ms));
+  let cs <- mapM(exposeCollection,map(applyStateAndMem, ms));
   function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
-  let isaInstrDefs = concat(map(getItems, cs));
-  List#(InstrDefn#(inst_sz)) instrDefs = concat(map(getInstDef, isaInstrDefs));
+  List#(List#(ISAInstDfn#(inst_sz))) isaInstrModuleDefs = map(getItems, cs);
+  // split definitions per type
+  let instrModuleDefs = map(sortBy(cmpInstrDefn),map(getInstDefs, isaInstrModuleDefs));
+  let unkInstrModuleDefs = map(getUnkInstDefs, isaInstrModuleDefs);
+  // instruction definitions
+  List#(InstrDefn#(inst_sz)) instrDefsTuples = mergeInstrDefns(instrModuleDefs);
+  List#(function GuardedActions f(Bit#(inst_sz) instr)) instrDefs = map(tpl_2, instrDefsTuples);
   let instrDefsLen = length(instrDefs);
-  //List#(List#(Action)) unkInstrDefs = concat(map(getUnkInstDef, isaInstrDefs));
-  let unkInstrDefs = concat(map(getUnkInstDef, isaInstrDefs));
+  // unknown instruction definitions
+  let unkInstrDefs = concat(unkInstrModuleDefs);
   let unkInstrDefsLen = length(unkInstrDefs);
   //XXX must build with -check-assert to detect this error !
   staticAssert(unkInstrDefsLen == 1, sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
   List#(Action) unkInst = head(unkInstrDefs)(inst);
 
   // generate rules for instruction execution
+  //////////////////////////////////////////////////////////////////////////////
   for (Integer i = 0; i < instrDefsLen; i = i + 1) begin
-    let f = List::head(instrDefs);
+    let f = head(instrDefs);
     GuardedActions acts = f(inst);
     let nbSteps = length(acts.body);
     for (Integer j = 0; j < nbSteps; j = j + 1) begin
-      let body = List::head(acts.body);
+      let body = head(acts.body);
       rule instr_rule (!isReset && stepCounter == fromInteger(j) && acts.guard);
         instDecoded.send();
         printTLogPlusArgs("BID_Core", $format("-------------------- step %0d ------------------", stepCounter));
@@ -82,15 +92,16 @@ provisos (
           doInstFetch.send();
         end else stepCounter <= fromInteger(j + 1);
       endrule
-      acts.body = List::tail(acts.body);
+      acts.body = tail(acts.body);
     end
-    instrDefs = List::tail(instrDefs);
+    instrDefs = tail(instrDefs);
   end
 
   // generate rules for unknown instruction
+  //////////////////////////////////////////////////////////////////////////////
   let unkInstLen = length(unkInst);
   for (Integer i = 0; i < unkInstLen; i = i + 1) begin
-    let body = List::head(unkInst);
+    let body = head(unkInst);
     rule unknown_instr_rule (!isReset && stepCounter == fromInteger(i) && ! instDecoded);
       body;
       if (stepCounter == fromInteger(unkInstLen - 1)) begin
@@ -98,8 +109,11 @@ provisos (
         doInstFetch.send();
       end else stepCounter <= fromInteger(i + 1);
     endrule
-    unkInst = List::tail(unkInst);
+    unkInst = tail(unkInst);
   end
+
+  // other rules
+  //////////////////////////////////////////////////////////////////////////////
 
   // general rule triggered on instruction commit
   rule on_inst_commit (instCommitting);
@@ -122,7 +136,8 @@ provisos (
   rule fetch_reset (isReset);
     mem.inst.fetchInst(unpack(archPC));
   endrule
-  // fetch next instruction on instruction commit
+
+  // fetch next instruction on doInstFetch
   rule fetch_next_instr (!isReset && doInstFetch);
     mem.inst.fetchInst(unpack(archPC));
     printTLogPlusArgs("BID_Core", $format("fetching next instr from 0x%0x", archPC));

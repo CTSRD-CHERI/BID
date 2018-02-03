@@ -53,7 +53,7 @@ endmodule
 // Types to harvest instructions //
 ////////////////////////////////////////////////////////////////////////////////
 
-typedef function GuardedActions f(Bit#(n) subject) InstrDefn#(numeric type n);
+typedef Tuple2#(String, function GuardedActions f(Bit#(n) subject)) InstrDefn#(numeric type n);
 typedef function List#(Action) f(Bit#(n) subject) UnkInstrDefn#(numeric type n);
 
 typedef union tagged {
@@ -65,6 +65,10 @@ function List#(InstrDefn#(n)) getInstDef (ISAInstDfn#(n) e) =
   e matches tagged InstDef .x ? cons(x, Nil) : Nil;
 function List#(UnkInstrDefn#(n)) getUnkInstDef (ISAInstDfn#(n) e) =
   e matches tagged UnkInstDef .x ? cons(x, Nil) : Nil;
+function List#(InstrDefn#(n)) getInstDefs(List#(ISAInstDfn#(n)) defs) =
+  concat(map(getInstDef,defs));
+function List#(UnkInstrDefn#(n)) getUnkInstDefs(List#(ISAInstDfn#(n)) defs) =
+  concat(map(getUnkInstDef,defs));
 
 typedef ModuleCollect#(ISAInstDfn#(n), ifc) InstrDefModule#(numeric type n, type ifc);
 typedef InstrDefModule#(32, ifc) Instr32DefModule#(type ifc);
@@ -72,28 +76,57 @@ typedef InstrDefModule#(32, ifc) Instr32DefModule#(type ifc);
 ////////////////////////////////////////////////////////////////////////////////
 
 typeclass DefineInstr#(type a);
-  module [InstrDefModule#(n)] defineInstr#(BitPat#(n, t, a) p, function t f)();
+  module [InstrDefModule#(n)] defineInstr#(String name, BitPat#(n, t, a) p, function t f)();
 endtypeclass
 
 instance DefineInstr#(Action);
-  module [InstrDefModule#(n)] defineInstr#(BitPat#(n, t, Action) p, function t f)();
+  module [InstrDefModule#(n)] defineInstr#(String name, BitPat#(n, t, Action) p, function t f)();
     function flipPat(x);
       Tuple2#(Bool, Action) res = p(x, f);
       return GuardedActions { guard: tpl_1(res), body: cons(tpl_2(res), Nil) };
     endfunction
-    addToCollection(tagged InstDef flipPat);
+    addToCollection(tagged InstDef tuple2(name,flipPat));
   endmodule
 endinstance
 
 instance DefineInstr#(List#(Action));
-  module [InstrDefModule#(n)] defineInstr#(BitPat#(n, t, List#(Action)) p, function t f)();
+  module [InstrDefModule#(n)] defineInstr#(String name, BitPat#(n, t, List#(Action)) p, function t f)();
     function flipPat(x);
       Tuple2#(Bool, List#(Action)) res = p(x, f);
       return GuardedActions { guard: tpl_1(res), body: tpl_2(res) };
     endfunction
-    addToCollection(tagged InstDef flipPat);
+    addToCollection(tagged InstDef tuple2(name, flipPat));
   endmodule
 endinstance
+
+function Ordering cmpInstrDefn(InstrDefn#(n) x, InstrDefn#(n) y);
+  function Ordering cmpCharList(List#(Char) a, List#(Char) b);
+    Ordering ord;
+    if (a == Nil) ord = (b == Nil) ? EQ : LT;
+    else if (b == Nil) ord = GT; else begin
+      let tmp = compare(head(a), head(b));
+      ord = (tmp == EQ) ? cmpCharList(tail(a), tail(b)) : tmp;
+    end
+    return ord;
+  endfunction
+  return cmpCharList(stringToCharList(tpl_1(x)), stringToCharList(tpl_1(y)));
+endfunction
+
+function List#(InstrDefn#(n)) mergeInstrDefns(List#(List#(InstrDefn#(n))) ls);
+  function List#(InstrDefn#(n)) merge2(
+    List#(InstrDefn#(n)) a,
+    List#(InstrDefn#(n)) b);
+    if (a matches Nil) return b;
+    else if (b matches Nil) return a;
+    else case (cmpInstrDefn(head(a), head(b)))
+        LT: return cons(head(a), merge2(tail(a), b));
+        GT: return cons(head(b), merge2(a, tail(b)));
+        // drop entry in a and overwrite with one in b
+        EQ: return cons(head(b), merge2(tail(a), tail(b)));
+    endcase
+  endfunction
+  return foldl1(merge2,ls);
+endfunction
 
 ////////////////////////////////////////////////////////////////////////////////
 

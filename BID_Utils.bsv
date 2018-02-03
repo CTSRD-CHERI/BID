@@ -1,6 +1,7 @@
 // 2018, Alexandre Joannou, University of Cambridge
 
 import Vector :: *;
+import List :: *;
 import RegFile :: *;
 import BRAMCore :: *;
 import FIFO :: *;

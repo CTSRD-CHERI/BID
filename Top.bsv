@@ -57,67 +57,61 @@ function Action pcEpilogue(MyArchState#(32) s) =
 // These instructions and their encoding are borrowed from the RISC-V I ISA
 module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, DMem#(Bit#(32), Bit#(32)) mem) ();
 
-  function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) =
-    action
-      printTLog($format("add %0d, %0d, %0d", rd, rs1, rs2));
-      printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + s.regfile[rs2]));
-      s.regfile[rd] <= s.regfile[rs1] + s.regfile[rs2];
-      pcEpilogue(s);
-    endaction;
-  defineInstr(pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
+  function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
+    printTLog($format("add %0d, %0d, %0d", rd, rs1, rs2));
+    printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + s.regfile[rs2]));
+    s.regfile[rd] <= s.regfile[rs1] + s.regfile[rs2];
+    pcEpilogue(s);
+  endaction;
+  defineInstr("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
 
-  function Action instrADDI(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) =
-    action
-      printTLog($format("addi %0d, %0d, %0d", rd, rs1, imm));
-      printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + signExtend(imm)));
-      s.regfile[rd] <= s.regfile[rs1] + signExtend(imm);
-      pcEpilogue(s);
-    endaction;
-  defineInstr(pat(v, v, n(3'b0), v, n(7'b0010011)),instrADDI);
+  function Action instrADDI(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) = action
+    printTLog($format("addi %0d, %0d, %0d", rd, rs1, imm));
+    printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + signExtend(imm)));
+    s.regfile[rd] <= s.regfile[rs1] + signExtend(imm);
+    pcEpilogue(s);
+  endaction;
+  defineInstr("addi",pat(v, v, n(3'b0), v, n(7'b0010011)),instrADDI);
 
-  function Action instrJAL(Bit#(1) imm20, Bit#(10) imm10_1, Bit#(1) imm11, Bit#(8) imm19_12, Bit#(5) rd) =
-    action
-      Bit#(32) imm = {signExtend(imm20),imm19_12,imm11,imm10_1,1'b0};
-      s.pc <= s.pc + imm;
-      s.regfile[rd] <= s.pc + 4;
-      printTLog($format("jal %0d, %0d", rd, imm));
-    endaction;
-  defineInstr(pat(v, v, v, v, v, n(7'b1101111)),instrJAL);
+  function Action instrJAL(Bit#(1) imm20, Bit#(10) imm10_1, Bit#(1) imm11, Bit#(8) imm19_12, Bit#(5) rd) = action
+    Bit#(32) imm = {signExtend(imm20),imm19_12,imm11,imm10_1,1'b0};
+    s.pc <= s.pc + imm;
+    s.regfile[rd] <= s.pc + 4;
+    printTLog($format("jal %0d, %0d", rd, imm));
+  endaction;
+  defineInstr("jal",pat(v, v, v, v, v, n(7'b1101111)),instrJAL);
 
-  function Action instrBEQ (Bit#(1) imm12, Bit#(6) imm10_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(4) imm4_1, Bit#(1) imm11) =
-    action
-      Bit#(32) imm = {signExtend(imm12),imm11,imm10_5,imm4_1,1'b0};
-      if (s.regfile[rs1] == s.regfile[rs2]) s.pc <= s.pc + imm;
-      else s.pc <= s.pc + 4;
-      printTLog($format("beq", rs1, rs2, imm));
-    endaction;
-  defineInstr(pat(v, v, v, v, n(3'b000), v, v, n(7'b1100011)), instrBEQ);
+  function Action instrBEQ (Bit#(1) imm12, Bit#(6) imm10_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(4) imm4_1, Bit#(1) imm11) = action
+    Bit#(32) imm = {signExtend(imm12),imm11,imm10_5,imm4_1,1'b0};
+    if (s.regfile[rs1] == s.regfile[rs2]) s.pc <= s.pc + imm;
+    else s.pc <= s.pc + 4;
+    printTLog($format("beq", rs1, rs2, imm));
+  endaction;
+  defineInstr("beq",pat(v, v, v, v, n(3'b000), v, v, n(7'b1100011)), instrBEQ);
 
-  function List#(Action) instrLB(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) =
-    list(
-      action
-        printTLog($format("lb %0d, %0d, %0d - step 1", rd, rs1, imm));
-        Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
-        mem.sendReq(tagged ReadReq {addr: addr, numBytes: 1});
-      endaction,
-      action
-        printTLog($format("lb %0d, %0d, %0d - step 2", rd, rs1, imm));
-        let rsp <- mem.getRsp();
-        case (rsp) matches tagged ReadRsp .r: s.regfile[rd] <= r; endcase
-        pcEpilogue(s);
-      endaction
-    );
-  defineInstr(pat(v, v, n(3'b000), v, n(7'b0000011)),instrLB);
-
-  function Action instrSB(Bit#(7) imm11_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(5) imm4_0) =
+  function List#(Action) instrLB(Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) = list(
     action
-      Bit#(32) imm = {signExtend(imm11_5), imm4_0};
+      printTLog($format("lb %0d, %0d, %0d - step 1", rd, rs1, imm));
       Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
-      mem.sendReq(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile[rs2]});
-      printTLog($format("sb %0d, %0d, %0d", rs1, rs2, imm));
+      mem.sendReq(tagged ReadReq {addr: addr, numBytes: 1});
+    endaction,
+    action
+      printTLog($format("lb %0d, %0d, %0d - step 2", rd, rs1, imm));
+      let rsp <- mem.getRsp();
+      case (rsp) matches tagged ReadRsp .r: s.regfile[rd] <= r; endcase
       pcEpilogue(s);
-    endaction;
-  defineInstr(pat(v, v, v, n(3'b000), v, n(7'b0100011)),instrSB);
+    endaction
+  );
+  defineInstr("lb",pat(v, v, n(3'b000), v, n(7'b0000011)),instrLB);
+
+  function Action instrSB(Bit#(7) imm11_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(5) imm4_0) = action
+    Bit#(32) imm = {signExtend(imm11_5), imm4_0};
+    Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
+    mem.sendReq(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile[rs2]});
+    printTLog($format("sb %0d, %0d, %0d", rs1, rs2, imm));
+    pcEpilogue(s);
+  endaction;
+  defineInstr("sb",pat(v, v, v, n(3'b000), v, n(7'b0100011)),instrSB);
 
   function List#(Action) unkInst(Bit#(32) inst) = list(
     action
@@ -130,6 +124,18 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, DMem#(Bit#(32), Bit#
   // uncomment to test the assertion
   //defineUnkInstr(unkInst);
 
+endmodule
+
+module [InstrDefModule#(32)] mkExtensionISA#(MyArchState#(32) s, DMem#(Bit#(32), Bit#(32)) mem) ();
+
+  // overwriting ADD instruction with new behaviour (just different logging)
+  function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
+    printTLog($format("EXTENDED add %0d, %0d, %0d", rd, rs1, rs2));
+    printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + s.regfile[rs2]));
+    s.regfile[rd] <= s.regfile[rs1] + s.regfile[rs2];
+    pcEpilogue(s);
+  endaction;
+  defineInstr("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
 endmodule
 
 ///////////////////////////////////
@@ -149,6 +155,7 @@ module top ();
   Mem#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkSharedMem(4096, "test-prog.hex");
 
   // instanciating simulator
-  mkISASim(mem, mkArchState, list(mkBaseISA));
+  //mkISASim(mem, mkArchState, list(mkBaseISA));
+  mkISASim(mem, mkArchState, list(mkBaseISA, mkExtensionISA));
 
 endmodule
