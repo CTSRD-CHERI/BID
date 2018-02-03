@@ -2,7 +2,7 @@
 
 import Printf :: *;
 
-import BID_ModuleCollect :: *;
+import BID_Collections :: *;
 
 ///////////////////////////
 // Simulator state types //

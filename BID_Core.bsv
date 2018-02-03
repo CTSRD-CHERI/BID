@@ -9,7 +9,7 @@ import ModuleCollect :: *;
 import BitPat :: *;
 
 import BID_Interface :: *;
-import BID_ModuleCollect :: *;
+import BID_Collections :: *;
 import BID_SimUtils :: *;
 
 //////////////////////////
