@@ -24,6 +24,8 @@ instance ArchState#(MyArchState);
     MyArchState#(n) s;
     s.regfile <- mkRegFileZ;
     s.pc <- mkPC;
+    // XXX uncomment to see the multiple PC definition error
+    //s.pc <- mkPC;
     s.instCnt <- mkCommittedInstCnt;
     return s;
   endmodule
@@ -138,16 +140,7 @@ module [InstrDefModule#(32)] mkExtensionISA#(MyArchState#(32) s, DMem#(Bit#(32),
   defineInstr("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
 
   // XXX uncomment to get multiple in module instruction definition error
-  /*
-  // overwriting ADD instruction with new behaviour (just different logging)
-  function Action instrADDdubious(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
-    printTLog($format("EXTENDED dubious add %0d, %0d, %0d", rd, rs1, rs2));
-    printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + s.regfile[rs2]));
-    s.regfile[rd] <= s.regfile[rs1] + s.regfile[rs2];
-    pcEpilogue(s);
-  endaction;
-  defineInstr("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADDdubious);
-  */
+  //defineInstr("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
 
 endmodule
 

@@ -2,7 +2,8 @@
 BITPATDIR = /home/aj443/devstuff/BitPat
 BSVPATH = +:$(BITPATDIR)
 BSC = bsc
-BSCFLAGS = -p $(BSVPATH) -check-assert
+#BSCFLAGS = -p $(BSVPATH) -check-assert
+BSCFLAGS = -p $(BSVPATH)
 ifdef NO_LOGS
 BSCFLAGS += -D NO_LOGS
 endif

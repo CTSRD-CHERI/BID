@@ -2,7 +2,6 @@
 
 import List :: *;
 import FIFO :: *;
-import Assert :: *;
 import Printf :: *;
 import ModuleCollect :: *;
 
@@ -43,8 +42,8 @@ provisos (
   // architectural PC
   let archPCs = concat(map(getArchPC, s.collection()));
   let lenArchPCs = length(archPCs);
-  //XXX must build with -check-assert to detect this error !
-  staticAssert(lenArchPCs == 1, sprintf("There must be exactly one architectural PC defined with mkPC (%0d detected)", lenArchPCs));
+  if (lenArchPCs != 1)
+    errorM(sprintf("There must be exactly one architectural PC defined with mkPC (%0d detected)", lenArchPCs));
   let archPC = head(archPCs);
   // on-instruction-commit actions
   let onInstCommits = concat(map(getOnInstCommit, s.collection()));
@@ -68,8 +67,8 @@ provisos (
   // unknown instruction definitions
   let unkInstrDefs = concat(unkInstrModuleDefs);
   let unkInstrDefsLen = length(unkInstrDefs);
-  //XXX must build with -check-assert to detect this error !
-  staticAssert(unkInstrDefsLen == 1, sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
+  if (unkInstrDefsLen != 1)
+    errorM(sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
   List#(Action) unkInst = head(unkInstrDefs)(inst);
 
   // generate rules for instruction execution
