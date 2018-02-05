@@ -58,7 +58,8 @@ provisos (
   function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
   List#(List#(ISAInstDfn#(inst_sz))) isaInstrModuleDefs = map(getItems, cs);
   // split definitions per type
-  let instrModuleDefs = map(sortBy(cmpInstrDefn),map(getInstDefs, isaInstrModuleDefs));
+  let func = compose(checkInstrDefns,compose(sortBy(cmpInstrDefn),getInstDefs));
+  let instrModuleDefs = map(func, isaInstrModuleDefs);
   let unkInstrModuleDefs = map(getUnkInstDefs, isaInstrModuleDefs);
   // instruction definitions
   List#(InstrDefn#(inst_sz)) instrDefsTuples = mergeInstrDefns(instrModuleDefs);

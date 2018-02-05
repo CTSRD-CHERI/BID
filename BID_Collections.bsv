@@ -3,6 +3,7 @@
 import BitPat :: *;
 
 import List :: *;
+import Printf :: *;
 import ModuleCollect :: *;
 
 import BID_SimUtils :: *;
@@ -98,6 +99,12 @@ instance DefineInstr#(List#(Action));
     addToCollection(tagged InstDef tuple2(name, flipPat));
   endmodule
 endinstance
+
+function List#(InstrDefn#(n)) checkInstrDefns(List#(InstrDefn#(n)) ls);
+  function check(a,b) = (tpl_1(a) != tpl_1(b)) ?
+    b : error(sprintf("Multiple definition of the %s instruction within the same module.", tpl_1(a)));
+  return cons(head(ls), zipWith(check, ls, tail(ls)));
+endfunction
 
 function Ordering cmpInstrDefn(InstrDefn#(n) x, InstrDefn#(n) y);
   function Ordering cmpCharList(List#(Char) a, List#(Char) b);
