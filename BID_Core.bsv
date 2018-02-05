@@ -36,45 +36,16 @@ provisos (
   // Peek at next instruction from imem
   Bit#(inst_sz) inst = pack(mem.inst.nextInst);
 
-  // harvest state
-  //////////////////////////////////////////////////////////////////////////////
-  IWithCollection#(ISAStateDfn#(addr_sz), archstate_t#(addr_sz)) s <- exposeCollection(mstate);
-  // architectural PC
-  let archPCs = concat(map(getArchPC, s.collection()));
-  let lenArchPCs = length(archPCs);
-  if (lenArchPCs != 1)
-    errorM(sprintf("There must be exactly one architectural PC defined with mkPC (%0d detected)", lenArchPCs));
-  let archPC = head(archPCs);
-  // on-instruction-commit actions
-  let onInstCommits = concat(map(getOnInstCommit, s.collection()));
-  let onInstCommitsLen = length(onInstCommits);
-
-  // harvest instructions
-  //////////////////////////////////////////////////////////////////////////////
-  // apply state and mem, and get collections for each module
-  function applyStateAndMem (g) = g(s.device, mem.data);
-  let cs <- mapM(exposeCollection,map(applyStateAndMem, ms));
-  function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
-  List#(List#(ISAInstDfn#(inst_sz))) isaInstrModuleDefs = map(getItems, cs);
-  // split definitions per type
-  let func = compose(checkInstrDefns,compose(sortBy(cmpInstrDefn),getInstDefs));
-  let instrModuleDefs = map(func, isaInstrModuleDefs);
-  let unkInstrModuleDefs = map(getUnkInstDefs, isaInstrModuleDefs);
-  // instruction definitions
-  List#(InstrDefn#(inst_sz)) instrDefsTuples = mergeInstrDefns(instrModuleDefs);
-  List#(function GuardedActions f(Bit#(inst_sz) instr)) instrDefs = map(tpl_2, instrDefsTuples);
-  let instrDefsLen = length(instrDefs);
-  // unknown instruction definitions
-  let unkInstrDefs = concat(unkInstrModuleDefs);
-  let unkInstrDefsLen = length(unkInstrDefs);
-  if (unkInstrDefsLen != 1)
-    errorM(sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
-  List#(Action) unkInst = head(unkInstrDefs)(inst);
+  // harvest collections
+  BIDCollections#(addr_sz, inst_sz, archstate_t#(addr_sz))
+    cols <- getCollections(mem, mstate, ms);
 
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////
+  List#(InstrDefn#(inst_sz)) instrDefs = cols.instrDefs;
+  let instrDefsLen = length(cols.instrDefs);
   for (Integer i = 0; i < instrDefsLen; i = i + 1) begin
-    let f = head(instrDefs);
+    let f = tpl_2(head(instrDefs));
     GuardedActions acts = f(inst);
     let nbSteps = length(acts.body);
     for (Integer j = 0; j < nbSteps; j = j + 1) begin
@@ -83,7 +54,7 @@ provisos (
         instDecoded.send();
         printTLogPlusArgs("BID_Core", $format("-------------------- step %0d ------------------", stepCounter));
         printTLogPlusArgs("BID_Core", $format("inst: 0x%0x", inst));
-        printLogPlusArgs("BID_Core", lightReport(s.device));
+        printLogPlusArgs("BID_Core", lightReport(cols.archState));
         body;
         if (stepCounter == fromInteger(nbSteps - 1)) begin
           stepCounter <= 0;
@@ -99,6 +70,7 @@ provisos (
 
   // generate rules for unknown instruction
   //////////////////////////////////////////////////////////////////////////////
+  List#(Action) unkInst = cols.unkInstrDef(inst);
   let unkInstLen = length(unkInst);
   for (Integer i = 0; i < unkInstLen; i = i + 1) begin
     let body = head(unkInst);
@@ -118,8 +90,8 @@ provisos (
   // general rule triggered on instruction commit
   rule on_inst_commit (instCommitting);
     printTLogPlusArgs("BID_Core", $format("Committing instruction rule"));
-    //let _ <- mapM_(id,onInstCommits);
-    List#(Action) as = onInstCommits;
+    List#(Action) as = cols.onInstCommits;
+    let onInstCommitsLen = length(cols.onInstCommits);
     for (Integer i = 0; i < onInstCommitsLen; i = i + 1) begin
       head(as);
       as = tail(as);
@@ -134,13 +106,13 @@ provisos (
 
   // fetch instruction on reset
   rule fetch_reset (isReset);
-    mem.inst.fetchInst(unpack(archPC));
+    mem.inst.fetchInst(unpack(cols.archPC));
   endrule
 
   // fetch next instruction on doInstFetch
   rule fetch_next_instr (!isReset && doInstFetch);
-    mem.inst.fetchInst(unpack(archPC));
-    printTLogPlusArgs("BID_Core", $format("fetching next instr from 0x%0x", archPC));
+    mem.inst.fetchInst(unpack(cols.archPC));
+    printTLogPlusArgs("BID_Core", $format("fetching next instr from 0x%0x", cols.archPC));
     printLogPlusArgs("BID_Core", "==============================================");
   endrule
 

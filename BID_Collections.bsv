@@ -7,6 +7,21 @@ import Printf :: *;
 import ModuleCollect :: *;
 
 import BID_SimUtils :: *;
+import BID_Interface :: *;
+
+///////////////////////////
+// Simulator state types //
+////////////////////////////////////////////////////////////////////////////////
+
+typeclass ArchState#(type a);
+  module [ArchStateDefModule#(n)] mkArchState(a#(n));
+  function Fmt lightReport (a#(n) s);
+  function Fmt fullReport (a#(n) s);
+endtypeclass
+
+typeclass World#(type a);
+  module initWorld(a);
+endtypeclass
 
 //////////////////////////////////////////
 // Types to harvest architectural state //
@@ -155,3 +170,61 @@ instance DefineUnkInstr#(List#(Action));
     addToCollection(tagged UnkInstDef applyFunc);
   endmodule
 endinstance
+
+/////////////////
+// Collections //
+////////////////////////////////////////////////////////////////////////////////
+
+typedef struct {
+  Bit#(addr_sz) archPC;
+  List#(Action) onInstCommits;
+  List#(InstrDefn#(inst_sz)) instrDefs;
+  UnkInstrDefn#(inst_sz) unkInstrDef;
+  archstate_t archState;
+} BIDCollections#(numeric type addr_sz, numeric type inst_sz, type archstate_t);
+
+module [Module] getCollections#(
+  Mem#(addr_t, inst_t, data_t) mem,
+  ArchStateDefModule#(addr_sz, archstate_t#(addr_sz)) mstate,
+  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t#(addr_sz) st, DMem#(addr_t, data_t) dmem)) ms)
+  (BIDCollections#(addr_sz, inst_sz, archstate_t#(addr_sz)));
+
+  // harvest state
+  //////////////////////////////////////////////////////////////////////////////
+  IWithCollection#(ISAStateDfn#(addr_sz), archstate_t#(addr_sz)) s <- exposeCollection(mstate);
+  // architectural PC
+  let archPCs = concat(map(getArchPC, s.collection()));
+  let lenArchPCs = length(archPCs);
+  if (lenArchPCs != 1)
+    errorM(sprintf("There must be exactly one architectural PC defined with mkPC (%0d detected)", lenArchPCs));
+  // on-instruction-commit actions
+  let onInstCommits = concat(map(getOnInstCommit, s.collection()));
+
+  // harvest instructions
+  //////////////////////////////////////////////////////////////////////////////
+  // apply state and mem, and get collections for each module
+  function applyStateAndMem (g) = g(s.device, mem.data);
+  let cs <- mapM(exposeCollection,map(applyStateAndMem, ms));
+  function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
+  List#(List#(ISAInstDfn#(inst_sz))) isaInstrModuleDefs = map(getItems, cs);
+  // split definitions per type
+  let func = compose(checkInstrDefns,compose(sortBy(cmpInstrDefn),getInstDefs));
+  let instrModuleDefs = map(func, isaInstrModuleDefs);
+  let unkInstrModuleDefs = map(getUnkInstDefs, isaInstrModuleDefs);
+  // instruction definitions
+  List#(InstrDefn#(inst_sz)) instrDefs = mergeInstrDefns(instrModuleDefs);
+  // unknown instruction definitions
+  let unkInstrDefs = concat(unkInstrModuleDefs);
+  let unkInstrDefsLen = length(unkInstrDefs);
+  if (unkInstrDefsLen != 1)
+    errorM(sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
+
+  return BIDCollections {
+    archPC: head(archPCs),
+    onInstCommits: onInstCommits,
+    instrDefs: instrDefs,
+    unkInstrDef: head(unkInstrDefs),
+    archState: s.device
+  };
+
+endmodule

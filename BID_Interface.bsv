@@ -2,22 +2,6 @@
 
 import Printf :: *;
 
-import BID_Collections :: *;
-
-///////////////////////////
-// Simulator state types //
-////////////////////////////////////////////////////////////////////////////////
-
-typeclass ArchState#(type a);
-  module [ArchStateDefModule#(n)] mkArchState(a#(n));
-  function Fmt lightReport (a#(n) s);
-  function Fmt fullReport (a#(n) s);
-endtypeclass
-
-typeclass World#(type a);
-  module initWorld(a);
-endtypeclass
-
 /////////////////////
 // Interface types //
 ////////////////////////////////////////////////////////////////////////////////
