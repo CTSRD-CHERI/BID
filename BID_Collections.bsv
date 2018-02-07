@@ -14,9 +14,8 @@ import BID_Interface :: *;
 ////////////////////////////////////////////////////////////////////////////////
 
 typeclass ArchState#(type a);
-  module [ArchStateDefModule#(n)] mkArchState(a#(n));
-  function Fmt lightReport (a#(n) s);
-  function Fmt fullReport (a#(n) s);
+  function Fmt lightReport (a s);
+  function Fmt fullReport (a s);
 endtypeclass
 
 typeclass World#(type a);
@@ -185,13 +184,13 @@ typedef struct {
 
 module [Module] getCollections#(
   Mem#(addr_t, inst_t, data_t) mem,
-  ArchStateDefModule#(addr_sz, archstate_t#(addr_sz)) mstate,
-  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t#(addr_sz) st, DMem#(addr_t, data_t) dmem)) ms)
-  (BIDCollections#(addr_sz, inst_sz, archstate_t#(addr_sz)));
+  ArchStateDefModule#(addr_sz, archstate_t) mstate,
+  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t st, DMem#(addr_t, data_t) dmem)) ms)
+  (BIDCollections#(addr_sz, inst_sz, archstate_t));
 
   // harvest state
   //////////////////////////////////////////////////////////////////////////////
-  IWithCollection#(ISAStateDfn#(addr_sz), archstate_t#(addr_sz)) s <- exposeCollection(mstate);
+  IWithCollection#(ISAStateDfn#(addr_sz), archstate_t) s <- exposeCollection(mstate);
   // architectural PC
   let archPCs = concat(map(getArchPC, s.collection()));
   let lenArchPCs = length(archPCs);

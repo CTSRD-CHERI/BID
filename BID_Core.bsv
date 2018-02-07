@@ -17,8 +17,8 @@ import BID_SimUtils :: *;
 
 module [Module] mkISASim#(
   Mem#(addr_t, inst_t, data_t) mem,
-  ArchStateDefModule#(addr_sz, archstate_t#(addr_sz)) mstate,
-  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t#(addr_sz) st, DMem#(addr_t, data_t) dmem)) ms) ()
+  ArchStateDefModule#(addr_sz, archstate_t) mstate,
+  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t st, DMem#(addr_t, data_t) dmem)) ms) ()
 provisos (
   ArchState#(archstate_t),
   Bits#(inst_t, inst_sz),
@@ -37,7 +37,7 @@ provisos (
   Bit#(inst_sz) inst = pack(mem.inst.nextInst);
 
   // harvest collections
-  BIDCollections#(addr_sz, inst_sz, archstate_t#(addr_sz))
+  BIDCollections#(addr_sz, inst_sz, archstate_t)
     cols <- getCollections(mem, mstate, ms);
 
   // generate rules for instruction execution

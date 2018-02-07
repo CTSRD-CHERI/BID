@@ -18,17 +18,17 @@ typedef struct {
   Reg#(Bit#(n)) instCnt;
 } MyArchState#(numeric type n);
 
-instance ArchState#(MyArchState);
+module [ArchStateDefModule#(32)] mkArchState (MyArchState#(32));
+  MyArchState#(32) s;
+  s.regfile <- mkRegFileZ;
+  s.pc <- mkPC;
+  // XXX uncomment to see the multiple PC definition error
+  //s.pc <- mkPC;
+  s.instCnt <- mkCommittedInstCnt;
+  return s;
+endmodule
 
-  module [ArchStateDefModule#(n)] mkArchState (MyArchState#(n));
-    MyArchState#(n) s;
-    s.regfile <- mkRegFileZ;
-    s.pc <- mkPC;
-    // XXX uncomment to see the multiple PC definition error
-    //s.pc <- mkPC;
-    s.instCnt <- mkCommittedInstCnt;
-    return s;
-  endmodule
+instance ArchState#(MyArchState#(n));
 
   function Fmt lightReport (MyArchState#(n) s);
     return $format("pc = 0x%0x, instCnt = %0d", s.pc, s.instCnt);
