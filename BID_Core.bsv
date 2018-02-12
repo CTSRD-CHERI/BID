@@ -122,7 +122,7 @@ provisos (
     rule sim_reset (isReset);
       startTime <= unpack(sysTime);
     endrule
-    rule sim_speed (pack(instCommitted)[12:0] == 0);
+    rule sim_speed (pack(instCommitted)[17:0] == 0);
       UInt#(64) t = unpack(sysTime) - startTime;
       UInt#(64) kips = (t > 0) ? (instCommitted / 1000) / t : 0;
       printPlusArgs("BID_kips", $format("(%0d kips) executed %0d instructions in %0d seconds ", kips, instCommitted, t));
