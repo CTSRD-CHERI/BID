@@ -33,7 +33,11 @@ provisos (
   Reg#(UInt#(64)) instCommitted <- mkReg(0);
 
   // Peek at next instruction from imem
-  Bit#(inst_sz) inst = pack(mem.inst.nextInst);
+  Reg#(Maybe#(Bit#(inst_sz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
+  rule peek_imem;
+    latchedInst[0] <= tagged Valid pack(mem.inst.nextInst);
+  endrule
+  Reg#(Maybe#(Bit#(inst_sz))) inst = latchedInst[1];
 
   // harvest collections
   BIDCollections#(addr_sz, inst_sz, archstate_t)
@@ -41,7 +45,7 @@ provisos (
 
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////
-  function getGuardedAction(x) = tpl_2(x)(inst);
+  function getGuardedAction(x) = tpl_2(x)(fromMaybe(?, inst));
   List#(GuardedActions) gacts = map(getGuardedAction, cols.instrDefs);
   function Bool getGuard(GuardedActions ga) = ga.guard;
   // Bluespec confuses the list "or" function with the "or" keyword
@@ -54,14 +58,15 @@ provisos (
     let nbSteps = length(ga.body);
     for (Integer j = 0; j < nbSteps; j = j + 1) begin
       let body = head(ga.body);
-      rule instr_body (!isReset && stepCounter == fromInteger(j) && ga.guard);
+      rule instr_body (!isReset && isValid(inst) && stepCounter == fromInteger(j) && ga.guard);
         printTLogPlusArgs("BID_Core", $format("-------------------- step %0d ------------------", stepCounter));
-        printTLogPlusArgs("BID_Core", $format("inst: 0x%0x", inst));
+        printTLogPlusArgs("BID_Core", $format("inst: 0x%0x", fromMaybe(?, inst)));
         printLogPlusArgs("BID_Core", lightReport(cols.archState));
         body;
         if (stepCounter == fromInteger(nbSteps - 1)) begin
           stepCounter <= 0;
           instCommitted <= instCommitted + 1;
+          inst <= tagged Invalid;
           instCommitting.send();
           doInstFetch.send();
         end else stepCounter <= fromInteger(j + 1);
@@ -73,11 +78,11 @@ provisos (
 
   // generate rules for unknown instruction
   //////////////////////////////////////////////////////////////////////////////
-  List#(Action) unkInst = cols.unkInstrDef(inst);
+  List#(Action) unkInst = cols.unkInstrDef(fromMaybe(?, inst));
   let unkInstLen = length(unkInst);
   for (Integer i = 0; i < unkInstLen; i = i + 1) begin
     let body = head(unkInst);
-    rule unknown_instr_rule (!isReset && stepCounter == fromInteger(i) && isUnkInst);
+    rule unknown_instr_rule (!isReset && isValid(inst) && stepCounter == fromInteger(i) && isUnkInst);
       body;
       if (stepCounter == fromInteger(unkInstLen - 1)) begin
         stepCounter <= 0;
