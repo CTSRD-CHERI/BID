@@ -169,7 +169,12 @@ endmodule
 // Simple un-pipelined shared data and instruction memory //
 ////////////////////////////////////////////////////////////////////////////////
 
-typedef enum {READY, UNALIGNED_0, UNALIGNED_1, FINISH} SharedMemState deriving (Bits, Eq, FShow);
+typedef enum {
+  READY,
+  CROSS_BOUNDARY,
+  FINISH_MULTI_CYCLE,
+  FINISH_SINGLE_CYCLE
+} PortState deriving (Bits, Eq, FShow);
 // size expressed in bytes
 module mkSharedMem#(Integer size, String file) (Mem#(addr_t, inst_t, data_t))
 provisos(
@@ -256,7 +261,7 @@ provisos(
 
   // local state
   //////////////////////////////////////////////////////////////////////////////
-  Reg#(SharedMemState) state <- mkReg(READY);
+  Reg#(PortState) state <- mkReg(READY);
   // double port BRAM core
   BRAM_DUAL_PORT_BE#(Bit#(idx_sz), Bit#(chunk_sz), chunk_byte_sz)
     mem <- mkBRAMCore2BELoad(size/valueOf(chunk_byte_sz), False, file, False);
@@ -281,13 +286,13 @@ provisos(
 
   // rule for unaligned accesses behaviour
   //////////////////////////////////////////////////////////////////////////////
-  rule unaligned_access (state == UNALIGNED_0);
+  rule unaligned_access (state == CROSS_BOUNDARY);
     // read internal request
     match {.isRead,.numBytes,.idx,.byteOffset,.writeen,.data,.remain} = pendingReq;
     // derive shift values
     if (isRead) begin // READ
       pendingReq <= tuple7(isRead,numBytes,idx,byteOffset,writeen,dataA,remain);
-      state <= UNALIGNED_1;
+      state <= FINISH_MULTI_CYCLE;
     end else begin // WRITE
       writeen = writeen >> bytesAbove(byteOffset);
       data = data >> bitsAbove(byteOffset);
@@ -310,30 +315,33 @@ provisos(
       pendingReq <= tuple7(isRead,numBytes,idx,byteOffset,writeen,(isRead) ? 0 : data,remain);
       // check for alignment issues
       if (remain > 0) begin
-        state <= UNALIGNED_0;
+        state <= CROSS_BOUNDARY;
         printTLogPlusArgs("BID_Utils","shared mem (data) -- un-aligned access crossing memory word boundary (extra cycle required)");
-      end else if (isRead) state <= FINISH; // request done when aligned access
+      end else if (isRead) state <= FINISH_SINGLE_CYCLE; // request done within the cycle
     endmethod
-    method ActionValue#(DMemRsp#(data_t)) getRsp if (state == FINISH || state == UNALIGNED_1);
+    method ActionValue#(DMemRsp#(data_t)) getRsp if (state == FINISH_MULTI_CYCLE || state == FINISH_SINGLE_CYCLE);
       // read internal request
       match {.isRead,.numBytes,.idx,.byteOffset,.writeen,.data,.remain} = pendingReq;
       // prepare response data
-      Bit#(data_sz) rsp_data;
-      if (state == FINISH) begin // single cycle access (aligned or un-aligned)
-        let shiftAmnt = (byteOffset == 0) ? 0 : bitsBelow(byteOffset);
-        rsp_data  = (truncate(dataA) & bitMaskAbove(byteOffset)) >> shiftAmnt;
-        printTLogPlusArgs("BID_Utils", "shared mem (data)-- aligned access response");
-        printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- dataA 0x%0x, bitMaskAbove(byteOffset) 0x%0x, shiftAmnt %0d, rsp_data 0x%0x", dataA, bitMaskAbove(byteOffset), shiftAmnt, rsp_data));
-      end else begin // merge with already read data
-        Bit#(data_sz) lowData = truncate(data);
-        lowData = (lowData  & bitMaskAbove(byteOffset)) >> bitsBelow(byteOffset);
-        Bit#(data_sz) hiData  = truncate(dataA);
-        hiData  = (hiData & bitMaskBelow(byteOffset)) << bitsAbove(byteOffset);
-        rsp_data = hiData | lowData;
-        printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- un-aligned access response (byteOffset = %0d)", byteOffset));
-        printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- lowData 0x%0x -- data 0x%0x, bitMaskAbove(byteOffset) 0x%0x, bitsBelow(byteOffset) %0d", lowData, data, bitMaskAbove(byteOffset), bitsBelow(byteOffset)));
-        printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- hiData 0x%0x -- dataA 0x%0x, bitMaskBelow(byteOffset) 0x%0x, bitsAbove(byteOffset) %0d", hiData, dataA, bitMaskBelow(byteOffset), bitsAbove(byteOffset)));
-      end
+      Bit#(data_sz) rsp_data = ?;
+      case (state)
+        FINISH_SINGLE_CYCLE: begin // single cycle access (aligned or un-aligned)
+          let shiftAmnt = (byteOffset == 0) ? 0 : bitsBelow(byteOffset);
+          rsp_data  = (truncate(dataA) & bitMaskAbove(byteOffset)) >> shiftAmnt;
+          printTLogPlusArgs("BID_Utils", "shared mem (data)-- single cycle response");
+          printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- rsp_data 0x%0x, dataA 0x%0x, bitMaskAbove(byteOffset) 0x%0x, shiftAmnt %0d", rsp_data, dataA, bitMaskAbove(byteOffset), shiftAmnt));
+        end
+        FINISH_MULTI_CYCLE: begin // merge with already read data
+          Bit#(data_sz) lowData = truncate(data);
+          lowData = (lowData  & bitMaskAbove(byteOffset)) >> bitsBelow(byteOffset);
+          Bit#(data_sz) hiData  = truncate(dataA);
+          hiData  = (hiData & bitMaskBelow(byteOffset)) << bitsAbove(byteOffset);
+          rsp_data = hiData | lowData;
+          printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- un-aligned access response (byteOffset = %0d)", byteOffset));
+          printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- lowData 0x%0x -- data 0x%0x, bitMaskAbove(byteOffset) 0x%0x, bitsBelow(byteOffset) %0d", lowData, data, bitMaskAbove(byteOffset), bitsBelow(byteOffset)));
+          printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- hiData 0x%0x -- dataA 0x%0x, bitMaskBelow(byteOffset) 0x%0x, bitsAbove(byteOffset) %0d", hiData, dataA, bitMaskBelow(byteOffset), bitsAbove(byteOffset)));
+        end
+      endcase
       // prepare response
       Bit#(data_sz) mask = ~((~0) << largeBitsBelow(numBytes));
       DMemRsp#(data_t) rsp = tagged ReadRsp unpack(truncate(rsp_data) & mask);
