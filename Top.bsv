@@ -57,7 +57,7 @@ function Action pcEpilogue(MyArchState#(32) s) =
 ////////////////////////////////////////////////////////////////////////////////
 
 // These instructions and their encoding are borrowed from the RISC-V I ISA
-module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, DMem#(Bit#(32), Bit#(32)) mem) ();
+module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, Mem#(Bit#(32), Bit#(32)) mem) ();
 
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
     printTLog($format("add %0d, %0d, %0d", rd, rs1, rs2));
@@ -128,7 +128,7 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, DMem#(Bit#(32), Bit#
 
 endmodule
 
-module [InstrDefModule#(32)] mkExtensionISA#(MyArchState#(32) s, DMem#(Bit#(32), Bit#(32)) mem) ();
+module [InstrDefModule#(32)] mkExtensionISA#(MyArchState#(32) s, Mem#(Bit#(32), Bit#(32)) mem) ();
 
   // overwriting ADD instruction with new behaviour (just different logging)
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
@@ -148,17 +148,9 @@ endmodule
 // Instanciate the ISA simulator //
 ////////////////////////////////////////////////////////////////////////////////
 
-module initMem (Mem#(Bit#(32), Bit#(32), Bit#(32)));
-  let imem <- mkSimpleIMem(1024, "test-prog.hex");
-  let dmem <- mkSimpleDMem(4096);
-  interface IMem inst = imem;
-  interface DMem data = dmem;
-endmodule
-
 module top ();
 
-  //Mem#(Bit#(32), Bit#(32), Bit#(32)) mem <- initMem;
-  Mem#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkSharedMem(4096, "test-prog.hex");
+  FullMem#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkSharedMem(4096, "test-prog.hex");
 
   // instanciating simulator
   //mkISASim(mem, mkArchState, list(mkBaseISA));

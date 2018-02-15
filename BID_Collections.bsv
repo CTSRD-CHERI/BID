@@ -183,9 +183,9 @@ typedef struct {
 } BIDCollections#(numeric type addr_sz, numeric type inst_sz, type archstate_t);
 
 module [Module] getCollections#(
-  Mem#(addr_t, inst_t, data_t) mem,
+  FullMem#(addr_t, inst_t, data_t) mem,
   ArchStateDefModule#(addr_sz, archstate_t) mstate,
-  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t st, DMem#(addr_t, data_t) dmem)) ms)
+  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t st, Mem#(addr_t, data_t) dmem)) ms)
   (BIDCollections#(addr_sz, inst_sz, archstate_t));
 
   // harvest state

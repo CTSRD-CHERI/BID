@@ -1,3 +1,4 @@
+// 2018, Alexandre Joannou, University of Cambridge
 // C function wrappers
 // get system time
 import "BDPI" function Bit#(64) sysTime ();

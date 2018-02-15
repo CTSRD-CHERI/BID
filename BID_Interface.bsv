@@ -62,7 +62,7 @@ endinterface
 
 // Mem request
 typedef union tagged {
-`define DATA_BYTES TDiv#(SizeOf#(data_t), BitsPerByte)
+`define DATA_BYTES TDiv#(SizeOf#(content_t), BitsPerByte)
   struct {
     addr_t addr;
     BitPO#(TLog#(`DATA_BYTES)) numBytes;
@@ -70,27 +70,33 @@ typedef union tagged {
   struct {
     addr_t addr;
     Bit#(`DATA_BYTES) byteEnable;
-    data_t data;
+    content_t data;
   } WriteReq;
-} DMemReq#(type addr_t, type data_t) deriving (FShow);
+} MemReq#(type addr_t, type content_t) deriving (FShow);
+typedef MemReq DMemReq;
 
 // Mem response
 typedef union tagged {
-  data_t ReadRsp;
+  content_t ReadRsp;
   void Failure;
-} DMemRsp#(type data_t) deriving (Bits, FShow);
+} MemRsp#(type content_t) deriving (Bits, FShow);
+typedef MemRsp DMemRsp;
 
 // Mem interface
-interface DMem#(type addr_t, type data_t);
-  method Action sendReq (DMemReq#(addr_t, data_t) req);
-  method ActionValue#(DMemRsp#(data_t)) getRsp ();
+interface Mem#(type addr_t, type content_t);
+  method Action sendReq (MemReq#(addr_t, content_t) req);
+  method ActionValue#(MemRsp#(content_t)) getRsp ();
+endinterface
+interface DMem#(type addr_t, type content_t);
+  method Action sendReq (DMemReq#(addr_t, content_t) req);
+  method ActionValue#(DMemRsp#(content_t)) getRsp ();
 endinterface
 
 ///////////////////////////
 // Full memory interface //
 ///////////////////////////
 
-interface Mem#(type addr_t, type inst_t, type data_t);
-  interface DMem#(addr_t, data_t) data;
-  interface IMem#(addr_t, inst_t) inst;
+interface FullMem#(type addr_t, type inst_t, type data_t);
+  interface Mem#(addr_t, data_t) data;
+  interface Mem#(addr_t, inst_t) inst;
 endinterface

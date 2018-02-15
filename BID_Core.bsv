@@ -16,28 +16,37 @@ import BID_SimUtils :: *;
 ////////////////////////////////////////////////////////////////////////////////
 
 module [Module] mkISASim#(
-  Mem#(addr_t, inst_t, data_t) mem,
+  FullMem#(addr_t, inst_t, data_t) mem,
   ArchStateDefModule#(addr_sz, archstate_t) mstate,
-  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t st, DMem#(addr_t, data_t) dmem)) ms) ()
+  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t st, Mem#(addr_t, data_t) dmem)) ms) ()
 provisos (
   ArchState#(archstate_t),
-  Bits#(inst_t, inst_sz),
-  Bits#(addr_t, addr_sz)
+  Bits#(inst_t, inst_sz), Div#(inst_sz, BitsPerByte, inst_byte_sz),
+  Bits#(addr_t, addr_sz),
+  FShow#(inst_t)
 );
 
   // local state
   Reg#(UInt#(8)) stepCounter <- mkReg(0);
   PulseWire instCommitting <- mkPulseWire;
-  PulseWire doInstFetch <- mkPulseWire;
+  Reg#(Bool) doInstFetch[2] <- mkCReg(2, False);
   Reg#(Bool) isReset <- mkReg(True);
   Reg#(Bit#(64)) instCommitted <- mkReg(0);
 
   // Peek at next instruction from imem
   Reg#(Maybe#(Bit#(inst_sz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
   rule peek_imem;
-    latchedInst[0] <= tagged Valid pack(mem.inst.nextInst);
+    let rsp <- mem.inst.getRsp();
+    printTLogPlusArgs("BID_Core", $format("received instruction response: ", fshow(rsp)));
+    case (rsp) matches
+      tagged ReadRsp .val: latchedInst[0] <= tagged Valid pack(val);
+      default: latchedInst[0] <= tagged Invalid;
+    endcase
   endrule
   Reg#(Maybe#(Bit#(inst_sz))) inst = latchedInst[1];
+  rule debug_current_inst;
+    printTLogPlusArgs("BID_Core", $format("current instructions: ", fshow(inst)));
+  endrule
 
   // harvest collections
   BIDCollections#(addr_sz, inst_sz, archstate_t)
@@ -68,7 +77,7 @@ provisos (
           instCommitted <= instCommitted + 1;
           inst <= tagged Invalid;
           instCommitting.send();
-          doInstFetch.send();
+          doInstFetch[0] <= True;
         end else stepCounter <= fromInteger(j + 1);
       endrule
       ga.body = tail(ga.body);
@@ -86,7 +95,7 @@ provisos (
       body;
       if (stepCounter == fromInteger(unkInstLen - 1)) begin
         stepCounter <= 0;
-        doInstFetch.send();
+        doInstFetch[0] <= True;
       end else stepCounter <= fromInteger(i + 1);
     endrule
     unkInst = tail(unkInst);
@@ -114,12 +123,19 @@ provisos (
 
   // fetch instruction on reset
   rule fetch_reset (isReset);
-    mem.inst.fetchInst(unpack(cols.archPC));
+    mem.inst.sendReq(tagged ReadReq {
+      addr: unpack(cols.archPC),
+      numBytes: fromInteger(valueOf(inst_byte_sz))
+    });
   endrule
 
   // fetch next instruction on doInstFetch
-  rule fetch_next_instr (!isReset && doInstFetch);
-    mem.inst.fetchInst(unpack(cols.archPC));
+  rule fetch_next_instr (!isReset && doInstFetch[1]);
+    mem.inst.sendReq(tagged ReadReq {
+      addr: unpack(cols.archPC),
+      numBytes: fromInteger(valueOf(inst_byte_sz))
+    });
+    doInstFetch[1] <= False;
     printTLogPlusArgs("BID_Core", $format("fetching next instr from 0x%0x", cols.archPC));
     printLogPlusArgs("BID_Core", "==============================================");
   endrule

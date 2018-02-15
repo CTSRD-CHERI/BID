@@ -7,6 +7,7 @@ import BRAMCore :: *;
 import FIFO :: *;
 
 import BID_Interface :: *;
+import BID_Utils_UnalignedMem :: *;
 import BID_SimUtils :: *;
 
 // Nice friendly list constructor lifted from Bluecheck's sources:
@@ -165,207 +166,45 @@ provisos(
 
 endmodule
 
-////////////////////////////////////////////////////////////
-// Simple un-pipelined shared data and instruction memory //
+////////////////////////////////////////
+// Shared data and instruction memory //
 ////////////////////////////////////////////////////////////////////////////////
 
-typedef enum {
-  READY,
-  CROSS_BOUNDARY,
-  FINISH_MULTI_CYCLE,
-  FINISH_SINGLE_CYCLE
-} PortState deriving (Bits, Eq, FShow);
 // size expressed in bytes
-module mkSharedMem#(Integer size, String file) (Mem#(addr_t, inst_t, data_t))
+module mkSharedMem#(Integer size, String file) (FullMem#(addr_t, inst_t, data_t))
 provisos(
-  // type sizes
   Bits#(addr_t, addr_sz), Bits#(inst_t, inst_sz), Bits#(data_t, data_sz),
-  Div#(inst_sz, BitsPerByte, inst_byte_sz), Div#(data_sz, BitsPerByte, data_byte_sz),
-  Max#(inst_sz, data_sz, chunk_sz),
-  Div#(chunk_sz, chunk_byte_sz, BitsPerByte), Mul#(BitsPerByte, chunk_byte_sz, chunk_sz),
+  Max#(inst_sz, data_sz, chunk_sz), Div#(chunk_sz, BitsPerByte, chunk_byte_sz),
   Add#(idx_sz, TLog#(chunk_byte_sz), addr_sz),
-  Add#(ofst_sz, idx_sz, addr_sz),
-  Mul#(inst_sz, inst_per_chunk, chunk_sz),
-  Add#(a__, TLog#(inst_per_chunk), addr_sz), // for the inst addr truncation
-  // XXX only support data_sz >= inst_sz, so currently chunk_sz==data_sz
-  Log#(data_byte_sz, ofst_sz),
-  Log#(TAdd#(1, TDiv#(data_sz, 8)), TAdd#(TLog#(data_byte_sz), 1)),
-  Add#(b__, ofst_sz, TAdd#(TLog#(data_byte_sz), 1)),
-  Add#(c__, data_byte_sz, chunk_byte_sz), // for the write enable zeroExtend
-  Add#(d__, data_sz, chunk_sz), // for the data zeroExtend
-  Div#(data_sz, BitsPerByte, data_byte_sz),
-  Log#(TDiv#(data_sz, BitsPerByte), TLog#(data_byte_sz)), // XXX why is this need when data_byte_sz is already defined ?
-  Add#(e__, TDiv#(data_sz, BitsPerByte), chunk_byte_sz), // XXX
-  Add#(f__, inst_sz, chunk_sz), // for the truncation when returning an inst
-  // Literal instances
-  Literal#(addr_t), Literal#(inst_t), Literal#(data_t),
+  // instruction size relationships
+  Add#(a__, TDiv#(inst_sz, BitsPerByte), chunk_byte_sz),
+  Add#(b__, inst_sz, chunk_sz),
+  Add#(c__, TLog#(TDiv#(inst_sz, BitsPerByte)), TAdd#(TLog#(chunk_byte_sz), 1)),
+  Add#(d__, TLog#(TDiv#(inst_sz, BitsPerByte)), TLog#(chunk_byte_sz)),
+  Log#(TAdd#(1, TDiv#(inst_sz, BitsPerByte)), TAdd#(TLog#(TDiv#(inst_sz, BitsPerByte)), 1)),
+  // data size relationships
+  Add#(e__, TDiv#(data_sz, BitsPerByte), chunk_byte_sz),
+  Add#(f__, data_sz, chunk_sz),
+  Add#(g__, TLog#(TDiv#(data_sz, BitsPerByte)), TAdd#(TLog#(chunk_byte_sz), 1)),
+  Add#(h__, TLog#(TDiv#(data_sz, BitsPerByte)), TLog#(chunk_byte_sz)),
+  Log#(TAdd#(1, TDiv#(data_sz, BitsPerByte)), TAdd#(TLog#(TDiv#(data_sz, BitsPerByte)), 1)),
+  // address size relationships
+  Add#(i__, TLog#(TDiv#(data_sz, BitsPerByte)), addr_sz),
+  Add#(j__, TLog#(TDiv#(inst_sz, BitsPerByte)), addr_sz),
+  // chunk size relashionships
+  Mul#(TDiv#(chunk_sz, chunk_byte_sz), chunk_byte_sz, chunk_sz),
   // FShow instances
   FShow#(addr_t), FShow#(inst_t), FShow#(data_t)
 );
 
-  // helper functions
-  //////////////////////////////////////////////////////////////////////////////
-
-  // internal request "unpacked" representation
-`define IN_REQ Tuple7#(\
-      Bool,\
-      Bit#(TAdd#(TLog#(data_byte_sz),1)),\
-      Bit#(idx_sz),\
-      Bit#(ofst_sz),\
-      Bit#(chunk_byte_sz),\
-      Bit#(chunk_sz),\
-      Bit#(TAdd#(ofst_sz, 1)))
-
-  function `IN_REQ unpackReq(DMemReq#(addr_t, data_t) req);
-    Bool isRead = True;
-    Bit#(TAdd#(TLog#(data_byte_sz),1)) numBytes = 0;
-    Bit#(idx_sz) idx = ?;
-    Bit#(ofst_sz) byteOffset = ?;
-    Bit#(chunk_byte_sz) writeen = 0;
-    Bit#(chunk_sz) data = ?;
-    case (req) matches
-      tagged ReadReq .r: begin // read request
-        numBytes = readBitPO(r.numBytes);
-        idx = truncateLSB(pack(r.addr));
-        byteOffset = truncate(pack(r.addr));
-      end
-      tagged WriteReq .w: begin // write request
-        isRead = False;
-        numBytes = pack(fromInteger(valueOf(data_byte_sz)) - countZerosMSB(w.byteEnable));
-        idx = truncateLSB(pack(w.addr));
-        byteOffset = truncate(pack(w.addr));
-        writeen = zeroExtend(w.byteEnable);
-        data = zeroExtend(pack(w.data));
-      end
-    endcase
-    Bit#(TAdd#(ofst_sz, 1)) avail  = fromInteger(valueOf(chunk_byte_sz)) - zeroExtend(byteOffset);
-    Bit#(TAdd#(ofst_sz, 1)) remain = (avail >= numBytes) ? 0 : numBytes - avail;
-    return tuple7(isRead, numBytes, idx, byteOffset, writeen, data, remain);
-  endfunction
-
-  // shifts and masks helpers
-  function Bit#(TAdd#(TLog#(data_byte_sz), 1)) bytesBelow (Bit#(ofst_sz) o) =
-    zeroExtend(o);
-  function Bit#(data_byte_sz) byteMaskBelow (Bit#(ofst_sz) o) = ~((~0) << bytesBelow(o));
-  function Bit#(TAdd#(TLog#(data_byte_sz), 1)) bytesAbove (Bit#(ofst_sz) o) =
-    fromInteger(valueOf(data_byte_sz)) - zeroExtend(o);
-  function Bit#(data_byte_sz) byteMaskAbove (Bit#(ofst_sz) o) = ~byteMaskBelow(o);
-  function Bit#(TAdd#(TLog#(data_byte_sz), 4)) bitsBelow (Bit#(ofst_sz) o) =
-    zeroExtend(bytesBelow(o)) << valueOf(TLog#(BitsPerByte));
-  function Bit#(data_sz) bitMaskBelow (Bit#(ofst_sz) o) = ~((~0) << bitsBelow(o));
-  function Bit#(TAdd#(TLog#(data_byte_sz), 4)) bitsAbove (Bit#(ofst_sz) o) =
-    zeroExtend(bytesAbove(o)) << valueOf(TLog#(BitsPerByte));
-  function Bit#(data_sz) bitMaskAbove (Bit#(ofst_sz) o) = ~bitMaskBelow(o);
-  function Bit#(TAdd#(TLog#(data_byte_sz), 4)) largeBitsBelow (Bit#(TAdd#(TLog#(data_byte_sz), 1)) o) =
-    zeroExtend(o) << valueOf(TLog#(BitsPerByte));
-
-  // local state
-  //////////////////////////////////////////////////////////////////////////////
-  Reg#(PortState) state <- mkReg(READY);
   // double port BRAM core
   BRAM_DUAL_PORT_BE#(Bit#(idx_sz), Bit#(chunk_sz), chunk_byte_sz)
     mem <- mkBRAMCore2BELoad(size/valueOf(chunk_byte_sz), False, file, False);
-  Bit#(chunk_sz) dataA = mem.a.read();
-  Bit#(chunk_sz) dataB = mem.b.read();
-  // data response/control  FIFO
-  Reg#(`IN_REQ) pendingReq <- mkRegU;
-  // instruction offset within memory chunk
-  Reg#(Bit#(TLog#(inst_per_chunk))) instOffset <- mkReg(0);
-
-  // rule debug state
-  rule debug_state;
-    Fmt str = $format("shared mem -- ", fshow(state)) +
-              $format(" -- port A data: 0x%0x", dataA) +
-              $format(" -- port B data: 0x%0x", dataB);
-    printTLogPlusArgs("BID_Utils", str);
-  endrule
-  rule debug_ifetch;
-    Vector#(inst_per_chunk, Bit#(inst_sz)) insts = unpack(dataB);
-    printTLogPlusArgs("BID_Utils", $format("shared mem (inst) -- reading ",fshow(insts),", selecting 0x%0x @ idx %0d", insts[instOffset], instOffset));
-  endrule
-
-  // rule for unaligned accesses behaviour
-  //////////////////////////////////////////////////////////////////////////////
-  rule unaligned_access (state == CROSS_BOUNDARY);
-    // read internal request
-    match {.isRead,.numBytes,.idx,.byteOffset,.writeen,.data,.remain} = pendingReq;
-    // derive shift values
-    if (isRead) begin // READ
-      pendingReq <= tuple7(isRead,numBytes,idx,byteOffset,writeen,dataA,remain);
-      state <= FINISH_MULTI_CYCLE;
-    end else begin // WRITE
-      writeen = writeen >> bytesAbove(byteOffset);
-      data = data >> bitsAbove(byteOffset);
-      state <= READY;
-    end
-    mem.a.put(writeen, idx + 1, data);
-  endrule
-
-  // data interface (port a)
-  //////////////////////////////////////////////////////////////////////////////
-  interface DMem data;
-    method Action sendReq (DMemReq#(addr_t, data_t) req) if (state == READY);
-      printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- ", fshow(req)));
-      // "unpack" the request
-      `IN_REQ inReq = unpackReq(req);
-      match {.isRead,.numBytes,.idx,.byteOffset,.writeen,.data,.remain} = inReq;
-      // perform the BRAMCore access
-      mem.a.put(writeen << bytesBelow(byteOffset), idx, data << bitsBelow(byteOffset));
-      // set the pending req register
-      pendingReq <= tuple7(isRead,numBytes,idx,byteOffset,writeen,(isRead) ? 0 : data,remain);
-      // check for alignment issues
-      if (remain > 0) begin
-        state <= CROSS_BOUNDARY;
-        printTLogPlusArgs("BID_Utils","shared mem (data) -- un-aligned access crossing memory word boundary (extra cycle required)");
-      end else if (isRead) state <= FINISH_SINGLE_CYCLE; // request done within the cycle
-    endmethod
-    method ActionValue#(DMemRsp#(data_t)) getRsp if (state == FINISH_MULTI_CYCLE || state == FINISH_SINGLE_CYCLE);
-      // read internal request
-      match {.isRead,.numBytes,.idx,.byteOffset,.writeen,.data,.remain} = pendingReq;
-      // prepare response data
-      Bit#(data_sz) rsp_data = ?;
-      case (state)
-        FINISH_SINGLE_CYCLE: begin // single cycle access (aligned or un-aligned)
-          let shiftAmnt = (byteOffset == 0) ? 0 : bitsBelow(byteOffset);
-          rsp_data  = (truncate(dataA) & bitMaskAbove(byteOffset)) >> shiftAmnt;
-          printTLogPlusArgs("BID_Utils", "shared mem (data)-- single cycle response");
-          printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- rsp_data 0x%0x, dataA 0x%0x, bitMaskAbove(byteOffset) 0x%0x, shiftAmnt %0d", rsp_data, dataA, bitMaskAbove(byteOffset), shiftAmnt));
-        end
-        FINISH_MULTI_CYCLE: begin // merge with already read data
-          Bit#(data_sz) lowData = truncate(data);
-          lowData = (lowData  & bitMaskAbove(byteOffset)) >> bitsBelow(byteOffset);
-          Bit#(data_sz) hiData  = truncate(dataA);
-          hiData  = (hiData & bitMaskBelow(byteOffset)) << bitsAbove(byteOffset);
-          rsp_data = hiData | lowData;
-          printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- un-aligned access response (byteOffset = %0d)", byteOffset));
-          printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- lowData 0x%0x -- data 0x%0x, bitMaskAbove(byteOffset) 0x%0x, bitsBelow(byteOffset) %0d", lowData, data, bitMaskAbove(byteOffset), bitsBelow(byteOffset)));
-          printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- hiData 0x%0x -- dataA 0x%0x, bitMaskBelow(byteOffset) 0x%0x, bitsAbove(byteOffset) %0d", hiData, dataA, bitMaskBelow(byteOffset), bitsAbove(byteOffset)));
-        end
-      endcase
-      // prepare response
-      Bit#(data_sz) mask = ~((~0) << largeBitsBelow(numBytes));
-      DMemRsp#(data_t) rsp = tagged ReadRsp unpack(truncate(rsp_data) & mask);
-      printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- reading 0x%0x @idx 0x%0x, return mask 0x%0x (from numBytes=%0d)", rsp_data, idx, mask, numBytes));
-      printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- ", fshow(rsp)));
-      state <= READY;
-      return rsp;
-    endmethod
-  endinterface
-
-  // instruction interface (port b)
-  //////////////////////////////////////////////////////////////////////////////
-  interface IMem inst;
-    method Action fetchInst (addr_t addr);
-      Bit#(TLog#(inst_per_chunk)) iOfst = truncate(pack(addr)>>valueOf(TLog#(inst_byte_sz)));
-      printTLogPlusArgs("BID_Utils", $format("shared mem (inst) -- fetching @ 0x%0x (instOffset %0d)", addr, iOfst));
-      instOffset <= iOfst;
-      mem.b.put(0, truncateLSB(pack(addr)), ?);
-    endmethod
-    method inst_t nextInst ();
-      Vector#(inst_per_chunk, Bit#(inst_sz)) insts = unpack(dataB);
-      return unpack(insts[instOffset]);
-    endmethod
-  endinterface
+  Mem#(addr_t, data_t) dataIfc <- mkPortCtrl("data", mem.a);
+  Mem#(addr_t, inst_t) instIfc <- mkPortCtrl("inst", mem.b);
+  // interface
+  interface data = dataIfc;
+  interface inst = instIfc;
 
 endmodule
 
