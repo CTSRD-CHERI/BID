@@ -31,7 +31,6 @@ provisos (
   PulseWire doInstFetch <- mkPulseWire;
   Reg#(Bool) isReset <- mkReg(True);
   Reg#(UInt#(64)) instCommitted <- mkReg(0);
-  PulseWire instDecoded <- mkPulseWireOR;
 
   // Peek at next instruction from imem
   Bit#(inst_sz) inst = pack(mem.inst.nextInst);
@@ -42,18 +41,20 @@ provisos (
 
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////
-  List#(InstrDefn#(inst_sz)) instrDefs = cols.instrDefs;
-  let instrDefsLen = length(cols.instrDefs);
-  for (Integer i = 0; i < instrDefsLen; i = i + 1) begin
-    let f = tpl_2(head(instrDefs));
-    GuardedActions acts = f(inst);
-    let nbSteps = length(acts.body);
+  function getGuardedAction(x) = tpl_2(x)(inst);
+  List#(GuardedActions) gacts = map(getGuardedAction, cols.instrDefs);
+  function Bool getGuard(GuardedActions ga) = ga.guard;
+  // Bluespec confuses the list "or" function with the "or" keyword
+  // escape it with "\" before and explicitly put a " " after
+  // Possible alternative: Bool isUnkInst = ! any(id, map(getGuard, gacts));
+  Bool isUnkInst = ! \or (map(getGuard, gacts));
+  let gactsLen = length(gacts);
+  for (Integer i = 0; i < gactsLen; i = i + 1) begin
+    GuardedActions ga = head(gacts);
+    let nbSteps = length(ga.body);
     for (Integer j = 0; j < nbSteps; j = j + 1) begin
-      let body = head(acts.body);
-      rule instr_decoded (!isReset && stepCounter == fromInteger(j) && acts.guard);
-        instDecoded.send();
-      endrule
-      rule instr_body (instDecoded && acts.guard);
+      let body = head(ga.body);
+      rule instr_body (!isReset && stepCounter == fromInteger(j) && ga.guard);
         printTLogPlusArgs("BID_Core", $format("-------------------- step %0d ------------------", stepCounter));
         printTLogPlusArgs("BID_Core", $format("inst: 0x%0x", inst));
         printLogPlusArgs("BID_Core", lightReport(cols.archState));
@@ -65,9 +66,9 @@ provisos (
           doInstFetch.send();
         end else stepCounter <= fromInteger(j + 1);
       endrule
-      acts.body = tail(acts.body);
+      ga.body = tail(ga.body);
     end
-    instrDefs = tail(instrDefs);
+    gacts = tail(gacts);
   end
 
   // generate rules for unknown instruction
@@ -76,7 +77,7 @@ provisos (
   let unkInstLen = length(unkInst);
   for (Integer i = 0; i < unkInstLen; i = i + 1) begin
     let body = head(unkInst);
-    rule unknown_instr_rule (!isReset && stepCounter == fromInteger(i) && ! instDecoded);
+    rule unknown_instr_rule (!isReset && stepCounter == fromInteger(i) && isUnkInst);
       body;
       if (stepCounter == fromInteger(unkInstLen - 1)) begin
         stepCounter <= 0;
