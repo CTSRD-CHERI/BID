@@ -50,8 +50,10 @@ provisos (
     let nbSteps = length(acts.body);
     for (Integer j = 0; j < nbSteps; j = j + 1) begin
       let body = head(acts.body);
-      rule instr_rule (!isReset && stepCounter == fromInteger(j) && acts.guard);
+      rule instr_decoded (!isReset && stepCounter == fromInteger(j) && acts.guard);
         instDecoded.send();
+      endrule
+      rule instr_body (instDecoded && acts.guard);
         printTLogPlusArgs("BID_Core", $format("-------------------- step %0d ------------------", stepCounter));
         printTLogPlusArgs("BID_Core", $format("inst: 0x%0x", inst));
         printLogPlusArgs("BID_Core", lightReport(cols.archState));

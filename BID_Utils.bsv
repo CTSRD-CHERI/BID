@@ -325,12 +325,14 @@ provisos(
         printTLogPlusArgs("BID_Utils", "shared mem (data)-- aligned access response");
         printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- dataA 0x%0x, bitMaskAbove(byteOffset) 0x%0x, shiftAmnt %0d, rsp_data 0x%0x", dataA, bitMaskAbove(byteOffset), shiftAmnt, rsp_data));
       end else begin // merge with already read data
-        Bit#(data_sz) lowData = (truncate(data)  & bitMaskAbove(byteOffset)) >> bitsAbove(byteOffset);
-        Bit#(data_sz) hiData  = (truncate(dataA) & bitMaskBelow(byteOffset)) << bitsBelow(byteOffset);
+        Bit#(data_sz) lowData = truncate(data);
+        lowData = (lowData  & bitMaskAbove(byteOffset)) >> bitsBelow(byteOffset);
+        Bit#(data_sz) hiData  = truncate(dataA);
+        hiData  = (hiData & bitMaskBelow(byteOffset)) << bitsAbove(byteOffset);
         rsp_data = hiData | lowData;
         printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- un-aligned access response (byteOffset = %0d)", byteOffset));
-        printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- data 0x%0x, lowData 0x%0x, bitMaskAbove(byteOffset) 0x%0x, bitsAbove(byteOffset) %0d", data, lowData, bitMaskAbove(byteOffset), bitsAbove(byteOffset)));
-        printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- dataA 0x%0x, hiData 0x%0x, bitMaskBelow(byteOffset) 0x%0x, bitsBelow(byteOffset) %0d", dataA, hiData, bitMaskBelow(byteOffset), bitsBelow(byteOffset)));
+        printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- lowData 0x%0x -- data 0x%0x, bitMaskAbove(byteOffset) 0x%0x, bitsBelow(byteOffset) %0d", lowData, data, bitMaskAbove(byteOffset), bitsBelow(byteOffset)));
+        printTLogPlusArgs("BID_Utils", $format("shared mem (data) -- hiData 0x%0x -- dataA 0x%0x, bitMaskBelow(byteOffset) 0x%0x, bitsAbove(byteOffset) %0d", hiData, dataA, bitMaskBelow(byteOffset), bitsAbove(byteOffset)));
       end
       // prepare response
       Bit#(data_sz) mask = ~((~0) << largeBitsBelow(numBytes));
