@@ -1,6 +1,8 @@
 // C function wrappers
 // get system time
 import "BDPI" function Bit#(64) sysTime ();
+// print ipc
+import "BDPI" function Action printIPC (Bit#(64) i, Bit#(64) c);
 
 ////////////////////////
 // logging primitives //

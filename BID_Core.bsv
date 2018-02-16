@@ -30,7 +30,7 @@ provisos (
   PulseWire instCommitting <- mkPulseWire;
   PulseWire doInstFetch <- mkPulseWire;
   Reg#(Bool) isReset <- mkReg(True);
-  Reg#(UInt#(64)) instCommitted <- mkReg(0);
+  Reg#(Bit#(64)) instCommitted <- mkReg(0);
 
   // Peek at next instruction from imem
   Reg#(Maybe#(Bit#(inst_sz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
@@ -126,14 +126,22 @@ provisos (
 
   // print sim speed
   if (genC) begin
-    Reg#(UInt#(64)) startTime <- mkReg(0);
+    Reg#(Bit#(64)) startTime <- mkReg(0);
+    Reg#(Bit#(64)) countCycles <- mkReg(0);
     rule sim_reset (isReset);
       startTime <= unpack(sysTime);
     endrule
-    rule sim_speed (pack(instCommitted)[17:0] == 0);
-      UInt#(64) t = unpack(sysTime) - startTime;
-      UInt#(64) kips = (t > 0) ? (instCommitted / 1000) / t : 0;
-      printPlusArgs("BID_kips", $format("(%0d kips) executed %0d instructions in %0d seconds ", kips, instCommitted, t));
+    rule count_cycles;
+      countCycles <= countCycles + 1;
+    endrule
+    rule sim_speed (instCommitted[17:0] == 0);
+      Bit#(64) t = unpack(sysTime) - startTime;
+      Bit#(64) kips = (t > 0) ? (instCommitted / 1000) / t : 0;
+      Bit#(64) kcps = (t > 0) ? (countCycles / 1000) / t : 0;
+      printPlusArgs("BID_kips", $format("(%0d kips) executed %0d instructions in %0d seconds", kips, instCommitted, t));
+      printPlusArgs("BID_kcps", $format("(%0d kcps) simulated %0d cycles in %0d seconds", kcps, countCycles, t));
+      Bool doPrintIPC <- $test$plusargs("BID_ipc");
+      if (doPrintIPC) printIPC (instCommitted, countCycles);
     endrule
   end
 
