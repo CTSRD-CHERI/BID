@@ -51,9 +51,9 @@ endinterface
 // Instruction memory interface //
 //////////////////////////////////
 
-interface IMem#(type addr_t, type inst_t);
-  method Action fetchInst (addr_t addr);
-  method inst_t nextInst ();
+interface IMem#(type inst_t);
+  method Action reqNext ();
+  method ActionValue#(inst_t) get ();
 endinterface
 
 ///////////////////////////
@@ -73,23 +73,23 @@ typedef union tagged {
     content_t data;
   } WriteReq;
 } MemReq#(type addr_t, type content_t) deriving (FShow);
-typedef MemReq DMemReq;
 
 // Mem response
 typedef union tagged {
   content_t ReadRsp;
   void Failure;
 } MemRsp#(type content_t) deriving (Bits, FShow);
-typedef MemRsp DMemRsp;
 
 // Mem interface
 interface Mem#(type addr_t, type content_t);
   method Action sendReq (MemReq#(addr_t, content_t) req);
   method ActionValue#(MemRsp#(content_t)) getRsp ();
 endinterface
-interface DMem#(type addr_t, type content_t);
-  method Action sendReq (DMemReq#(addr_t, content_t) req);
-  method ActionValue#(DMemRsp#(content_t)) getRsp ();
+typedef Mem DMem;
+
+interface Mem2#(type addr_t, type t0, type t1);
+  interface Mem#(addr_t, t0) p0;
+  interface Mem#(addr_t, t1) p1;
 endinterface
 
 ///////////////////////////
@@ -97,6 +97,6 @@ endinterface
 ///////////////////////////
 
 interface FullMem#(type addr_t, type inst_t, type data_t);
-  interface Mem#(addr_t, data_t) data;
-  interface Mem#(addr_t, inst_t) inst;
+  interface DMem#(addr_t, data_t) data;
+  interface IMem#(inst_t) inst;
 endinterface

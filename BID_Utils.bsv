@@ -5,6 +5,7 @@ import List :: *;
 import RegFile :: *;
 import BRAMCore :: *;
 import FIFO :: *;
+import SpecialFIFOs :: *;
 
 import BID_Interface :: *;
 import BID_Utils_UnalignedMem :: *;
@@ -47,6 +48,22 @@ provisos (Bits#(a, a_sz), Literal#(a));
   return cons(r0,rf);
 endmodule
 
+interface PC#(type a);
+  method Action _write(a x);
+  method a _read();
+  method a next();
+endinterface
+module mkPC (PC#(a))
+provisos(
+  Bits#(a, n),
+  Literal#(a)
+);
+  Reg#(a) r[2] <- mkCReg(2,0);
+  method Action _write(a x) = action r[0] <= x; endaction;
+  method a _read() = r[0];
+  method a next() = r[1];
+endmodule
+
 // Combinational primitives
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -73,12 +90,12 @@ function Bit#(n) arithRightShift (Bit#(n) a, Bit#(m) b);
   return pack(sa >> b);
 endfunction
 
-////////////////////////
-// Simple data memory //
+///////////////////
+// Simple memory //
 ////////////////////////////////////////////////////////////////////////////////
 
 // size expressed in bytes
-module mkSimpleDMem#(Integer size) (DMem#(addr_t, data_t))
+module mkSimpleMem#(Integer size) (Mem#(addr_t, data_t))
 provisos(
   // type sizes
   Bits#(addr_t, addr_sz),
@@ -101,7 +118,7 @@ provisos(
   // Interface
   //////////////////////////////////////////////////////////////////////////////
 
-  method Action sendReq (DMemReq#(addr_t, data_t) req);
+  method Action sendReq (MemReq#(addr_t, data_t) req);
     printTLogPlusArgs("BID_Utils", $format("simple mem ", fshow(req)));
     case (req) matches
       tagged ReadReq .r: begin
@@ -136,8 +153,8 @@ provisos(
     endcase
   endmethod
 
-  method ActionValue#(DMemRsp#(data_t)) getRsp ();
-    DMemRsp#(data_t) rsp = tagged ReadRsp unpack(pack(readRspFIFO.first()));
+  method ActionValue#(MemRsp#(data_t)) getRsp ();
+    MemRsp#(data_t) rsp = tagged ReadRsp unpack(pack(readRspFIFO.first()));
     readRspFIFO.deq();
     printTLogPlusArgs("BID_Utils", $format("simple mem -- ", fshow(rsp)));
     return rsp;
@@ -150,7 +167,7 @@ endmodule
 ////////////////////////////////////////////////////////////////////////////////
 
 // size expressed in bytes
-module mkSimpleIMem#(Integer size, String file) (IMem#(addr_t, inst_t))
+module mkSimpleIMem#(Integer size, String file, addr_t pc) (IMem#(inst_t))
 provisos(
   Bits#(addr_t, addr_sz),
   Bits#(inst_t, inst_sz),
@@ -159,10 +176,17 @@ provisos(
 );
 
   BRAM_PORT#(Bit#(idx_sz), inst_t) mem <- mkBRAMCore1Load(size/valueOf(inst_byte_sz), False, file, False);
+  FIFO#(Bit#(0)) pendingReq <- mkPipelineFIFO;
 
-  method Action fetchInst (addr_t addr) = mem.put(False, truncateLSB(pack(addr)), ?);
+  method Action reqNext () = action
+    mem.put(False, truncateLSB(pack(pc)), ?);
+    pendingReq.enq(?);
+  endaction;
 
-  method inst_t nextInst = mem.read;
+  method ActionValue#(inst_t) get () = actionvalue
+    pendingReq.deq();
+    return mem.read;
+  endactionvalue;
 
 endmodule
 
@@ -171,7 +195,44 @@ endmodule
 ////////////////////////////////////////////////////////////////////////////////
 
 // size expressed in bytes
-module mkSharedMem#(Integer size, String file) (FullMem#(addr_t, inst_t, data_t))
+module mkSharedMem2#(Integer size, String file) (Mem2#(addr_t, t0, t1))
+provisos(
+  Bits#(addr_t, addr_sz), Bits#(t0, t0_sz), Bits#(t1, t1_sz),
+  Max#(t0_sz, t1_sz, chunk_sz), Div#(chunk_sz, BitsPerByte, chunk_byte_sz),
+  Add#(idx_sz, TLog#(chunk_byte_sz), addr_sz),
+  // port0 size relationships
+  Add#(a__, TDiv#(t0_sz, BitsPerByte), chunk_byte_sz),
+  Add#(b__, t0_sz, chunk_sz),
+  Add#(c__, TLog#(TDiv#(t0_sz, BitsPerByte)), TAdd#(TLog#(chunk_byte_sz), 1)),
+  Add#(d__, TLog#(TDiv#(t0_sz, BitsPerByte)), TLog#(chunk_byte_sz)),
+  Log#(TAdd#(1, TDiv#(t0_sz, BitsPerByte)), TAdd#(TLog#(TDiv#(t0_sz, BitsPerByte)), 1)),
+  // port1 size relationships
+  Add#(e__, TDiv#(t1_sz, BitsPerByte), chunk_byte_sz),
+  Add#(f__, t1_sz, chunk_sz),
+  Add#(g__, TLog#(TDiv#(t1_sz, BitsPerByte)), TAdd#(TLog#(chunk_byte_sz), 1)),
+  Add#(h__, TLog#(TDiv#(t1_sz, BitsPerByte)), TLog#(chunk_byte_sz)),
+  Log#(TAdd#(1, TDiv#(t1_sz, BitsPerByte)), TAdd#(TLog#(TDiv#(t1_sz, BitsPerByte)), 1)),
+  // address size relationships
+  Add#(i__, TLog#(TDiv#(t1_sz, BitsPerByte)), addr_sz),
+  Add#(j__, TLog#(TDiv#(t0_sz, BitsPerByte)), addr_sz),
+  // chunk size relashionships
+  Mul#(TDiv#(chunk_sz, chunk_byte_sz), chunk_byte_sz, chunk_sz),
+  // FShow instances
+  FShow#(addr_t), FShow#(t0), FShow#(t1)
+);
+
+  // double port BRAM core
+  BRAM_DUAL_PORT_BE#(Bit#(idx_sz), Bit#(chunk_sz), chunk_byte_sz)
+    mem <- mkBRAMCore2BELoad(size/valueOf(chunk_byte_sz), False, file, False);
+  Mem#(addr_t, t0) p0Ifc <- mkPortCtrl("port0", mem.a);
+  Mem#(addr_t, t1) p1Ifc <- mkPortCtrl("port1", mem.b);
+  // interface
+  interface p0 = p0Ifc;
+  interface p1 = p1Ifc;
+
+endmodule
+
+module mkFullMem#(Integer size, String file, addr_t pc) (FullMem#(addr_t, inst_t, data_t))
 provisos(
   Bits#(addr_t, addr_sz), Bits#(inst_t, inst_sz), Bits#(data_t, data_sz),
   Max#(inst_sz, data_sz, chunk_sz), Div#(chunk_sz, BitsPerByte, chunk_byte_sz),
@@ -197,14 +258,21 @@ provisos(
   FShow#(addr_t), FShow#(inst_t), FShow#(data_t)
 );
 
-  // double port BRAM core
-  BRAM_DUAL_PORT_BE#(Bit#(idx_sz), Bit#(chunk_sz), chunk_byte_sz)
-    mem <- mkBRAMCore2BELoad(size/valueOf(chunk_byte_sz), False, file, False);
-  Mem#(addr_t, data_t) dataIfc <- mkPortCtrl("data", mem.a);
-  Mem#(addr_t, inst_t) instIfc <- mkPortCtrl("inst", mem.b);
-  // interface
-  interface data = dataIfc;
-  interface inst = instIfc;
+  Mem2#(addr_t, inst_t, data_t) mem <- mkSharedMem2(size, file);
+  interface IMem inst;
+    method Action reqNext () =  mem.p0.sendReq(tagged ReadReq {
+      addr: pc,
+      numBytes: fromInteger(valueOf(TDiv#(SizeOf#(inst_t), BitsPerByte)))
+    });
+    method ActionValue#(inst_t) get ();
+      let rsp <- mem.p0.getRsp();
+      return case (rsp) matches
+        tagged ReadRsp .val: val;
+        default: ?;
+      endcase;
+    endmethod
+  endinterface
+  interface data = mem.p1;
 
 endmodule
 

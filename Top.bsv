@@ -14,17 +14,15 @@ import BID :: *;
 
 typedef struct {
   Vector#(32,Reg#(Bit#(n))) regfile;
-  Reg#(Bit#(n)) pc;
-  Reg#(Bit#(n)) instCnt;
+  PC#(Bit#(n)) pc;
+  Reg#(UInt#(64)) instCnt;
 } MyArchState#(numeric type n);
 
-module [ArchStateDefModule#(32)] mkArchState (MyArchState#(32));
+module mkArchState (MyArchState#(32));
   MyArchState#(32) s;
   s.regfile <- mkRegFileZ;
   s.pc <- mkPC;
-  // XXX uncomment to see the multiple PC definition error
-  //s.pc <- mkPC;
-  s.instCnt <- mkCommittedInstCnt;
+  s.instCnt <- mkReg(0);
   return s;
 endmodule
 
@@ -48,7 +46,7 @@ function Action pcEpilogue(MyArchState#(32) s) =
     printTLog("--------------- epilogue --------------");
     Bit#(32) tmpPC = s.pc + 4;
     s.pc <= tmpPC;
-    s.instCnt <= 666;
+    s.instCnt <= s.instCnt + 1;
     printTLog($format("s.pc <= 0x%0x", tmpPC));
   endaction;
 
@@ -150,10 +148,11 @@ endmodule
 
 module top ();
 
-  FullMem#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkSharedMem(4096, "test-prog.hex");
+  MyArchState#(32) s <- mkArchState;
+  FullMem#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkFullMem(4096, "test-prog.hex", s.pc.next);
 
   // instanciating simulator
-  //mkISASim(mem, mkArchState, list(mkBaseISA));
-  mkISASim(mem, mkArchState, list(mkBaseISA, mkExtensionISA));
+  //mkISASim(mem, s, list(mkBaseISA));
+  mkISASim(mem, s, list(mkBaseISA, mkExtensionISA));
 
 endmodule

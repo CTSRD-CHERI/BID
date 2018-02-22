@@ -17,7 +17,7 @@ import BID_SimUtils :: *;
 
 module [Module] mkISASim#(
   FullMem#(addr_t, inst_t, data_t) mem,
-  ArchStateDefModule#(addr_sz, archstate_t) mstate,
+  archstate_t archState,
   List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t st, Mem#(addr_t, data_t) dmem)) ms) ()
 provisos (
   ArchState#(archstate_t),
@@ -36,12 +36,9 @@ provisos (
   // Peek at next instruction from imem
   Reg#(Maybe#(Bit#(inst_sz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
   rule peek_imem;
-    let rsp <- mem.inst.getRsp();
+    inst_t rsp <- mem.inst.get();
+    latchedInst[0] <= tagged Valid pack(rsp);
     printTLogPlusArgs("BID_Core", $format("received instruction response: ", fshow(rsp)));
-    case (rsp) matches
-      tagged ReadRsp .val: latchedInst[0] <= tagged Valid pack(val);
-      default: latchedInst[0] <= tagged Invalid;
-    endcase
   endrule
   Reg#(Maybe#(Bit#(inst_sz))) inst = latchedInst[1];
   rule debug_current_inst;
@@ -49,8 +46,7 @@ provisos (
   endrule
 
   // harvest collections
-  BIDCollections#(addr_sz, inst_sz, archstate_t)
-    cols <- getCollections(mem, mstate, ms);
+  BIDCollections#(inst_sz) cols <- getCollections(mem, archState, ms);
 
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////
@@ -70,7 +66,7 @@ provisos (
       rule instr_body (!isReset && isValid(inst) && stepCounter == fromInteger(j) && ga.guard);
         printTLogPlusArgs("BID_Core", $format("-------------------- step %0d ------------------", stepCounter));
         printTLogPlusArgs("BID_Core", $format("inst: 0x%0x", fromMaybe(?, inst)));
-        printLogPlusArgs("BID_Core", lightReport(cols.archState));
+        printLogPlusArgs("BID_Core", lightReport(archState));
         body;
         if (stepCounter == fromInteger(nbSteps - 1)) begin
           stepCounter <= 0;
@@ -107,12 +103,6 @@ provisos (
   // general rule triggered on instruction commit
   rule on_inst_commit (instCommitting);
     printTLogPlusArgs("BID_Core", $format("Committing instruction rule"));
-    List#(Action) as = cols.onInstCommits;
-    let onInstCommitsLen = length(cols.onInstCommits);
-    for (Integer i = 0; i < onInstCommitsLen; i = i + 1) begin
-      head(as);
-      as = tail(as);
-    end
     printLogPlusArgs("BID_Core", "==============================================");
   endrule
 
@@ -123,20 +113,14 @@ provisos (
 
   // fetch instruction on reset
   rule fetch_reset (isReset);
-    mem.inst.sendReq(tagged ReadReq {
-      addr: unpack(cols.archPC),
-      numBytes: fromInteger(valueOf(inst_byte_sz))
-    });
+    mem.inst.reqNext();
   endrule
 
   // fetch next instruction on doInstFetch
   rule fetch_next_instr (!isReset && doInstFetch[1]);
-    mem.inst.sendReq(tagged ReadReq {
-      addr: unpack(cols.archPC),
-      numBytes: fromInteger(valueOf(inst_byte_sz))
-    });
+    mem.inst.reqNext();
     doInstFetch[1] <= False;
-    printTLogPlusArgs("BID_Core", $format("fetching next instr from 0x%0x", cols.archPC));
+    printTLogPlusArgs("BID_Core", $format("fetching next instr"));
     printLogPlusArgs("BID_Core", "==============================================");
   endrule
 

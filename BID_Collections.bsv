@@ -22,48 +22,6 @@ typeclass World#(type a);
   module initWorld(a);
 endtypeclass
 
-//////////////////////////////////////////
-// Types to harvest architectural state //
-////////////////////////////////////////////////////////////////////////////////
-
-typedef union tagged {
-  Bit#(n) ArchPC;
-  Action OnInstCommit;
-} ISAStateDfn#(numeric type n);
-function List#(Bit#(m)) getArchPC (ISAStateDfn#(m) e) =
-  e matches tagged ArchPC .x ? cons(x, Nil) : Nil;
-function List#(Action) getOnInstCommit (ISAStateDfn#(m) e) =
-  e matches tagged OnInstCommit .x ? cons(x, Nil) : Nil;
-typedef ModuleCollect#(ISAStateDfn#(n), ifc) ArchStateDefModule#(numeric type n, type ifc);
-
-////////////////////////////////////////////////////////////////////////////////
-
-module [ArchStateDefModule#(n)] mkPC (Reg#(a_type))
-provisos(
-  Bits#(a_type, n),
-  Literal#(a_type)
-);
-  Reg#(a_type) r[2] <- mkCReg(2,0);
-  addToCollection(tagged ArchPC pack(r[1]));
-  return r[0];
-endmodule
-
-////////////////////////////////////////////////////////////////////////////////
-
-module [ArchStateDefModule#(n)] mkCommittedInstCnt (Reg#(a_type))
-provisos(
-  Bits#(a_type, a_type_sz),
-  Arith#(a_type)
-);
-  Reg#(a_type) r <- mkReg(0);
-  ISAStateDfn#(n) element = tagged OnInstCommit action r <= r + 1; endaction;
-  addToCollection(element);
-  method a_type _read() = r;
-  method Action _write(a_type v);
-    printLog($format("WARNING - ignoring write of %0d to an inst counter", v));
-  endmethod
-endmodule
-
 ///////////////////////////////////
 // Types to harvest instructions //
 ////////////////////////////////////////////////////////////////////////////////
@@ -175,34 +133,20 @@ endinstance
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef struct {
-  Bit#(addr_sz) archPC;
-  List#(Action) onInstCommits;
   List#(InstrDefn#(inst_sz)) instrDefs;
   UnkInstrDefn#(inst_sz) unkInstrDef;
-  archstate_t archState;
-} BIDCollections#(numeric type addr_sz, numeric type inst_sz, type archstate_t);
+} BIDCollections#(numeric type inst_sz);
 
 module [Module] getCollections#(
   FullMem#(addr_t, inst_t, data_t) mem,
-  ArchStateDefModule#(addr_sz, archstate_t) mstate,
+  archstate_t archState,
   List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t st, Mem#(addr_t, data_t) dmem)) ms)
-  (BIDCollections#(addr_sz, inst_sz, archstate_t));
-
-  // harvest state
-  //////////////////////////////////////////////////////////////////////////////
-  IWithCollection#(ISAStateDfn#(addr_sz), archstate_t) s <- exposeCollection(mstate);
-  // architectural PC
-  let archPCs = concat(map(getArchPC, s.collection()));
-  let lenArchPCs = length(archPCs);
-  if (lenArchPCs != 1)
-    errorM(sprintf("There must be exactly one architectural PC defined with mkPC (%0d detected)", lenArchPCs));
-  // on-instruction-commit actions
-  let onInstCommits = concat(map(getOnInstCommit, s.collection()));
+  (BIDCollections#(inst_sz));
 
   // harvest instructions
   //////////////////////////////////////////////////////////////////////////////
   // apply state and mem, and get collections for each module
-  function applyStateAndMem (g) = g(s.device, mem.data);
+  function applyStateAndMem (g) = g(archState, mem.data);
   let cs <- mapM(exposeCollection,map(applyStateAndMem, ms));
   function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
   List#(List#(ISAInstDfn#(inst_sz))) isaInstrModuleDefs = map(getItems, cs);
@@ -219,11 +163,8 @@ module [Module] getCollections#(
     errorM(sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
 
   return BIDCollections {
-    archPC: head(archPCs),
-    onInstCommits: onInstCommits,
     instrDefs: instrDefs,
-    unkInstrDef: head(unkInstrDefs),
-    archState: s.device
+    unkInstrDef: head(unkInstrDefs)
   };
 
 endmodule
