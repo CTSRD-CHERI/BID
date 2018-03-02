@@ -1,5 +1,6 @@
 // 2018, Alexandre Joannou, University of Cambridge
 
+import Recipe :: *;
 import BitPat :: *;
 
 import List :: *;
@@ -26,8 +27,8 @@ endtypeclass
 // Types to harvest instructions //
 ////////////////////////////////////////////////////////////////////////////////
 
-typedef Tuple2#(String, function GuardedActions f(Bit#(n) subject)) InstrDefn#(numeric type n);
-typedef function List#(Action) f(Bit#(n) subject) UnkInstrDefn#(numeric type n);
+typedef Tuple2#(String, function GuardedRecipe f(Bit#(n) subject)) InstrDefn#(numeric type n);
+typedef function Recipe f(Bit#(n) subject) UnkInstrDefn#(numeric type n);
 
 typedef union tagged {
   InstrDefn#(n) InstDef;
@@ -56,9 +57,9 @@ instance DefineInstr#(Action);
   module [InstrDefModule#(n)] defineInstr#(String name, BitPat#(n, t, Action) p, function t f)();
     function flipPat(x);
       Tuple2#(Bool, Action) res = p(x, f);
-      return GuardedActions { guard: tpl_1(res), body: cons(tpl_2(res), Nil) };
+      return GuardedRecipe { guard: tpl_1(res), recipe: rAct(tpl_2(res)) };
     endfunction
-    addToCollection(tagged InstDef tuple2(name,flipPat));
+    addToCollection(InstDef(tuple2(name,flipPat)));
   endmodule
 endinstance
 
@@ -66,9 +67,19 @@ instance DefineInstr#(List#(Action));
   module [InstrDefModule#(n)] defineInstr#(String name, BitPat#(n, t, List#(Action)) p, function t f)();
     function flipPat(x);
       Tuple2#(Bool, List#(Action)) res = p(x, f);
-      return GuardedActions { guard: tpl_1(res), body: tpl_2(res) };
+      return GuardedRecipe { guard: tpl_1(res), recipe: rSeq(map(rAct, tpl_2(res))) };
     endfunction
-    addToCollection(tagged InstDef tuple2(name, flipPat));
+    addToCollection(InstDef(tuple2(name, flipPat)));
+  endmodule
+endinstance
+
+instance DefineInstr#(Recipe);
+  module [InstrDefModule#(n)] defineInstr#(String name, BitPat#(n, t, Recipe) p, function t f)();
+    function flipPat(x);
+      Tuple2#(Bool, Recipe) res = p(x, f);
+      return GuardedRecipe { guard: tpl_1(res), recipe: tpl_2(res) };
+    endfunction
+    addToCollection(InstDef(tuple2(name, flipPat)));
   endmodule
 endinstance
 
@@ -116,15 +127,15 @@ endtypeclass
 
 instance DefineUnkInstr#(Action);
   module [InstrDefModule#(n)] defineUnkInstr#(function Action f(Bit#(n) s))();
-    function List#(Action) applyFunc(Bit#(n) x) = cons(f(x),Nil);
-    addToCollection(tagged UnkInstDef applyFunc);
+    function Recipe applyFunc(Bit#(n) x) = rAct(f(x));
+    addToCollection(UnkInstDef(applyFunc));
   endmodule
 endinstance
 
 instance DefineUnkInstr#(List#(Action));
   module [InstrDefModule#(n)] defineUnkInstr#(function List#(Action) f(Bit#(n) s))();
-    function List#(Action) applyFunc(Bit#(n) x) = f(x);
-    addToCollection(tagged UnkInstDef applyFunc);
+    function Recipe applyFunc(Bit#(n) x) = rSeq(map(rAct, f(x)));
+    addToCollection(UnkInstDef(applyFunc));
   endmodule
 endinstance
 

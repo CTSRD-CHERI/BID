@@ -1,6 +1,7 @@
 # BSV compiler flags
+RECIPEDIR = /home/aj443/devstuff/Recipe
 BITPATDIR = /home/aj443/devstuff/BitPat
-BSVPATH = +:$(BITPATDIR)
+BSVPATH = +:$(RECIPEDIR):$(BITPATDIR)
 BSC = bsc
 #BSCFLAGS = -p $(BSVPATH) -check-assert
 BSCFLAGS = -p $(BSVPATH)

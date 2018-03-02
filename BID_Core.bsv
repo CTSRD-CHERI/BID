@@ -5,6 +5,7 @@ import FIFO :: *;
 import Printf :: *;
 import ModuleCollect :: *;
 
+import Recipe :: *;
 import BitPat :: *;
 
 import BID_Interface :: *;
@@ -27,8 +28,7 @@ provisos (
 );
 
   // local state
-  Reg#(UInt#(8)) stepCounter <- mkReg(0);
-  PulseWire instCommitting <- mkPulseWire;
+  PulseWire instDone <- mkPulseWireOR;
   Reg#(Bool) doInstFetch[2] <- mkCReg(2, False);
   Reg#(Bool) isReset <- mkReg(True);
   Reg#(Bit#(64)) instCommitted <- mkReg(0);
@@ -50,61 +50,49 @@ provisos (
 
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////
-  function getGuardedAction(x) = tpl_2(x)(fromMaybe(?, inst));
-  List#(GuardedActions) gacts = map(getGuardedAction, cols.instrDefs);
-  function Bool getGuard(GuardedActions ga) = ga.guard;
-  // Bluespec confuses the list "or" function with the "or" keyword
-  // escape it with "\" before and explicitly put a " " after
-  // Possible alternative: Bool isUnkInst = ! any(id, map(getGuard, gacts));
-  Bool isUnkInst = ! \or (map(getGuard, gacts));
-  let gactsLen = length(gacts);
-  for (Integer i = 0; i < gactsLen; i = i + 1) begin
-    GuardedActions ga = head(gacts);
-    let nbSteps = length(ga.body);
-    for (Integer j = 0; j < nbSteps; j = j + 1) begin
-      let body = head(ga.body);
-      rule instr_body (!isReset && isValid(inst) && stepCounter == fromInteger(j) && ga.guard);
-        printTLogPlusArgs("BID_Core", $format("-------------------- step %0d ------------------", stepCounter));
-        printTLogPlusArgs("BID_Core", $format("inst: 0x%0x", fromMaybe(?, inst)));
-        printLogPlusArgs("BID_Core", lightReport(archState));
-        body;
-        if (stepCounter == fromInteger(nbSteps - 1)) begin
-          stepCounter <= 0;
-          instCommitted <= instCommitted + 1;
-          inst <= tagged Invalid;
-          instCommitting.send();
-          doInstFetch[0] <= True;
-        end else stepCounter <= fromInteger(j + 1);
-      endrule
-      ga.body = tail(ga.body);
-    end
-    gacts = tail(gacts);
-  end
-
-  // generate rules for unknown instruction
-  //////////////////////////////////////////////////////////////////////////////
-  List#(Action) unkInst = cols.unkInstrDef(fromMaybe(?, inst));
-  let unkInstLen = length(unkInst);
-  for (Integer i = 0; i < unkInstLen; i = i + 1) begin
-    let body = head(unkInst);
-    rule unknown_instr_rule (!isReset && isValid(inst) && stepCounter == fromInteger(i) && isUnkInst);
-      body;
-      if (stepCounter == fromInteger(unkInstLen - 1)) begin
-        stepCounter <= 0;
-        doInstFetch[0] <= True;
-      end else stepCounter <= fromInteger(i + 1);
+  function getGuardedRecipe(x) = tpl_2(x)(fromMaybe(?, inst));
+  List#(GuardedRecipe) grs = map(getGuardedRecipe, cols.instrDefs);
+  List#(Bool) guards = map(getGuard, grs);
+  Bool isUnkInst = ! any(id, guards);
+  List#(Tuple2#(Rules, RecipeFSM)) allInsts <- mapM(compileRules, map(getRecipe, grs));
+  module mkRunInst#(Bool g, RecipeFSM m) ();
+    rule runInst (g);
+      m.start();
     endrule
-    unkInst = tail(unkInst);
-  end
-
-  // other rules
-  //////////////////////////////////////////////////////////////////////////////
-
+    rule pulseInstDone (m.isLastCycle);
+      instDone.send();
+    endrule
+  endmodule
+  zipWithM(mkRunInst, guards, map(tpl_2, allInsts));
   // general rule triggered on instruction commit
-  rule on_inst_commit (instCommitting);
+  rule on_inst_commit (instDone);
+    instCommitted <= instCommitted + 1;
+    inst <= tagged Invalid;
+    doInstFetch[0] <= True;
     printTLogPlusArgs("BID_Core", $format("Committing instruction rule"));
     printLogPlusArgs("BID_Core", "==============================================");
   endrule
+
+  // generate rules for unknown instruction
+  //////////////////////////////////////////////////////////////////////////////
+  Tuple2#(Rules, RecipeFSM) unkInst <- compileRules(cols.unkInstrDef(fromMaybe(?, inst)));
+  module mkRunUnkInst#(Bool g, RecipeFSM m) ();
+    rule runUnkInst (g);
+      m.start();
+    endrule
+    rule unkInstDone (m.isLastCycle);
+      inst <= tagged Invalid;
+      doInstFetch[0] <= True;
+    endrule
+  endmodule
+  mkRunUnkInst(!isReset && isValid(inst) && isUnkInst, tpl_2(unkInst));
+
+  // Add all compiled rules
+  //////////////////////////////////////////////////////////////////////////////
+  addRules(fold(rJoinMutuallyExclusive, cons(tpl_1(unkInst), map(tpl_1, allInsts))));
+
+  // other rules
+  //////////////////////////////////////////////////////////////////////////////
 
   // clear reseet after first cycle
   rule clear_reset (isReset);
