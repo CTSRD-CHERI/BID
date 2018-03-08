@@ -21,7 +21,7 @@ typedef struct {
 module mkArchState (MyArchState#(32));
   MyArchState#(32) s;
   s.regfile <- mkRegFileZ;
-  s.pc <- mkPC;
+  s.pc <- mkPC(0);
   s.instCnt <- mkReg(0);
   return s;
 endmodule

@@ -53,12 +53,8 @@ interface PC#(type a);
   method a _read();
   method a next();
 endinterface
-module mkPC (PC#(a))
-provisos(
-  Bits#(a, n),
-  Literal#(a)
-);
-  Reg#(a) r[2] <- mkCReg(2,0);
+module mkPC#(a startVal) (PC#(a)) provisos(Bits#(a, n));
+  Reg#(a) r[2] <- mkCReg(2, startVal);
   method Action _write(a x) = action r[0] <= x; endaction;
   method a _read() = r[0];
   method a next() = r[1];
