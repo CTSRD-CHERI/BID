@@ -67,7 +67,7 @@ instance DefineInstr#(List#(Action));
   module [InstrDefModule#(n)] defineInstr#(String name, BitPat#(n, t, List#(Action)) p, function t f)();
     function flipPat(x);
       Tuple2#(Bool, List#(Action)) res = p(x, f);
-      return GuardedRecipe { guard: tpl_1(res), recipe: rSeq(map(rAct, tpl_2(res))) };
+      return GuardedRecipe { guard: tpl_1(res), recipe: rPar(map(rAct, tpl_2(res))) };
     endfunction
     addToCollection(InstDef(tuple2(name, flipPat)));
   endmodule
@@ -134,7 +134,7 @@ endinstance
 
 instance DefineUnkInstr#(List#(Action));
   module [InstrDefModule#(n)] defineUnkInstr#(function List#(Action) f(Bit#(n) s))();
-    function Recipe applyFunc(Bit#(n) x) = rSeq(map(rAct, f(x)));
+    function Recipe applyFunc(Bit#(n) x) = rPar(map(rAct, f(x)));
     addToCollection(UnkInstDef(applyFunc));
   endmodule
 endinstance
