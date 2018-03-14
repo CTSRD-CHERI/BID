@@ -19,10 +19,10 @@ import BID_SimUtils :: *;
 module [Module] mkISASim#(
   FullMem#(addr_t, inst_t, data_t) mem,
   archstate_t archState,
-  List#(function InstrDefModule#(inst_sz, ifc) mkMod (archstate_t st, Mem#(addr_t, data_t) dmem)) ms) ()
+  List#(function InstrDefModule#(ifc) mkMod (archstate_t st, Mem#(addr_t, data_t) dmem)) ms) ()
 provisos (
   ArchState#(archstate_t),
-  Bits#(inst_t, inst_sz), Div#(inst_sz, BitsPerByte, inst_byte_sz),
+  Bits#(inst_t, MaxInstSz),
   Bits#(addr_t, addr_sz),
   FShow#(inst_t)
 );
@@ -34,19 +34,19 @@ provisos (
   Reg#(Bit#(64)) instCommitted <- mkReg(0);
 
   // Peek at next instruction from imem
-  Reg#(Maybe#(Bit#(inst_sz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
+  Reg#(Maybe#(Bit#(MaxInstSz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
   rule peek_imem;
     inst_t rsp <- mem.inst.get();
     latchedInst[0] <= tagged Valid pack(rsp);
     printTLogPlusArgs("BID_Core", $format("received instruction response: ", fshow(rsp)));
   endrule
-  Reg#(Maybe#(Bit#(inst_sz))) inst = latchedInst[1];
+  Reg#(Maybe#(Bit#(MaxInstSz))) inst = latchedInst[1];
   rule debug_current_inst;
     printTLogPlusArgs("BID_Core", $format("current instructions: ", fshow(inst)));
   endrule
 
   // harvest collections
-  BIDCollections#(inst_sz) cols <- getCollections(mem, archState, ms);
+  BIDCollections cols <- getCollections(mem, archState, ms);
 
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////

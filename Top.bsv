@@ -54,8 +54,9 @@ function Action pcEpilogue(MyArchState#(32) s) =
 // Define instruction set //
 ////////////////////////////////////////////////////////////////////////////////
 
+// example Base ISA definition
 // These instructions and their encoding are borrowed from the RISC-V I ISA
-module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, Mem#(Bit#(32), Bit#(32)) mem) ();
+module [InstrDefModule] mkBaseISA#(MyArchState#(32) s, Mem#(Bit#(32), Bit#(32)) mem) ();
 
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
     printTLog($format("add %0d, %0d, %0d", rd, rs1, rs2));
@@ -113,7 +114,14 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, Mem#(Bit#(32), Bit#(
   endaction;
   defineInstr("sb",pat(v, v, v, n(3'b000), v, n(7'b0100011)),instrSB);
 
-  function List#(Action) unkInst(Bit#(32) inst) = list(
+  function Action instrC_LI(Bit#(1) imm_5, Bit#(5) rd, Bit#(5) imm4_0) = action
+    s.regfile[rd] <= signExtend({imm_5, imm4_0});
+    printTLog($format("c.li %0d, %0d", rd, {imm_5, imm4_0}));
+    s.pc <= s.pc + 2;
+  endaction;
+  defineInstr("c.li",pat(n(3'b010), v, v, v, n(2'b01)),instrC_LI);
+
+  function List#(Action) unkInst(Bit#(MaxInstSz) inst) = list(
     action
       printTLog($format("Unknown instruction 0x%0x", inst));
       pcEpilogue(s);
@@ -126,7 +134,8 @@ module [InstrDefModule#(32)] mkBaseISA#(MyArchState#(32) s, Mem#(Bit#(32), Bit#(
 
 endmodule
 
-module [InstrDefModule#(32)] mkExtensionISA#(MyArchState#(32) s, Mem#(Bit#(32), Bit#(32)) mem) ();
+// example extension module with instruction overwritting
+module [InstrDefModule] mkExtensionISA#(MyArchState#(32) s, Mem#(Bit#(32), Bit#(32)) mem) ();
 
   // overwriting ADD instruction with new behaviour (just different logging)
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
@@ -152,7 +161,7 @@ module top ();
   FullMem#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkFullMem(4096, "test-prog.hex", s.pc.next);
 
   // instanciating simulator
-  //mkISASim(mem, s, list(mkBaseISA));
+  // Instruction defined in modules later in the list overwrite earlier definitions
   mkISASim(mem, s, list(mkBaseISA, mkExtensionISA));
 
 endmodule
