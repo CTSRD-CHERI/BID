@@ -4,7 +4,7 @@ import Vector :: *;
 import List :: *;
 import RegFile :: *;
 import BRAMCore :: *;
-import FIFOF :: *;
+import FIFO :: *;
 import SpecialFIFOs :: *;
 
 import BID_Interface :: *;
@@ -93,25 +93,41 @@ module mkPortCtrl#(
   //////////////////////////////////////////////////////////////////////////////
   Reg#(Bool) cross_boundary[2] <- mkCReg(2,False);
   Reg#(Bool) req_done <- mkRegU;
-  Reg#(Bit#(chunk_sz)) prev_lookup <- mkRegU;
+  Reg#(Maybe#(Tuple2#(Bit#(idx_sz), Bit#(chunk_sz)))) prev_lookup[2] <- mkCReg(2, tagged Invalid);
+  Wire#(Tuple2#(Bit#(idx_sz), Bit#(chunk_sz))) prevLookupUpdt <- mkWire;
+  Wire#(Tuple3#(Bit#(chunk_byte_sz), Bit#(idx_sz), Bit#(chunk_sz))) memLookup <- mkWire;
   // data response/control pipeline FIFOF
-  FIFOF#(`IN_REQ) pendingReq <- mkPipelineFIFOF;
+  FIFO#(`IN_REQ) pendingReq <- mkPipelineFIFO;
 
   // rule debug
   rule debug;
-    printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- cross_boundary: ", fshow(cross_boundary[0]), ", req_done: ", fshow(req_done), ", pendingReq.notEmpty:", fshow(pendingReq.notEmpty)));
+    printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- cross_boundary: ", fshow(cross_boundary[0]), ", req_done: ", fshow(req_done), ", prev_lookup[0]: ", fshow(prev_lookup[0])));
+  endrule
+
+  // rule sending the mem module put request
+  rule mem_lookup;
+    match {.writeen, .idx, .data} = memLookup;
+    mem.put(writeen, idx, data);
+    printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- sending mem.put(0x%0x,0x%0x,0x%0x)", writeen, idx, data));
+  endrule
+
+  // rule updating the prev_lookup
+  rule update_prev_lookup;
+    match {.idx, .data} = prevLookupUpdt;
+    prev_lookup[0] <= Valid(prevLookupUpdt);
+    printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- updating prev_lookup(0x%0x,0x%0x)", idx, data));
   endrule
 
   // rule for cross-boundary accesses behaviour
   //////////////////////////////////////////////////////////////////////////////
   PulseWire cross_boundary_access_fire <- mkPulseWire;
-  rule cross_boundary_access (pendingReq.notEmpty && cross_boundary[0] && !req_done);
+  rule cross_boundary_access (cross_boundary[0] && !req_done);
     cross_boundary_access_fire.send();
     // read internal request
     match {.isRead,.numBytes,.idx,.byteOffset,.writeen,.data,.remain} = pendingReq.first();
     // derive shift values
     if (isRead) begin // READ
-      prev_lookup <= mem.read;
+      prevLookupUpdt <= tuple2(idx, mem.read);
       req_done <= True; // signal end of request
       printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- done read"));
     end else begin // WRITE
@@ -122,7 +138,7 @@ module mkPortCtrl#(
       pendingReq.deq();
       printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- done write"));
     end
-    mem.put(writeen, idx + 1, data);
+    memLookup <= tuple3(writeen, idx + 1, data);
   endrule
 
   // interface
@@ -132,34 +148,43 @@ module mkPortCtrl#(
     // "unpack" the request
     `IN_REQ inReq = unpackReq(req);
     match {.isRead,.numBytes,.idx,.byteOffset,.writeen,.data,.remain} = inReq;
-    // perform the BRAMCore access
-    mem.put(writeen << bytesBelow(byteOffset), idx, data << bitsBelow(byteOffset));
     // check for cross boundary access
     Bool isCrossBoundary = remain > 0;
+    Bool isSingleCycle = !isCrossBoundary;
+    // prepare mem put request
+    let req_writeen = writeen << bytesBelow(byteOffset);
+    let req_idx = idx;
+    let req_data = data << bitsBelow(byteOffset);
+    // check previous lookup for match and alter the mem request / single cycle accordingly
+    match {.pidx, .pdata} = fromMaybe(?, prev_lookup[1]);
+    printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- isRead: ", fshow(isRead),", isCrossBoundary: ", fshow(isCrossBoundary),", pidx: 0x%0x, idx: 0x%0x", pidx, idx));
+    if (isValid(prev_lookup[1]) && (pidx == idx) && isRead && isCrossBoundary) begin
+      req_idx = idx + 1;
+      isSingleCycle = True;
+      printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- use prev_lookup @idx 0x%0x to avoid extra lookup", idx));
+    end
     // on reads or cross boundary accesses, enqueue a pending request
     if (isRead || isCrossBoundary) pendingReq.enq(tuple7(isRead,numBytes,idx,byteOffset,writeen,(isRead) ? 0 : data,remain));
-    if (isCrossBoundary) begin // for cross boundary reads or writes
-      cross_boundary[1] <= True;
-      req_done <= False;
-      printTLogPlusArgs("BID_Utils",$format("port controller (", fshow(name), ") -- un-aligned access crossing memory word boundary (extra cycle required)"));
-    end else if (isRead) begin // for read requests done within the cycle
-      cross_boundary[1] <= False;
-      req_done <= True;
-    end
+    // set control registers
+    cross_boundary[1] <= isCrossBoundary;
+    req_done <= isSingleCycle;
+    // perform the BRAMCore access
+    memLookup <= tuple3(req_writeen, req_idx, req_data);
   endmethod
-  method ActionValue#(MemRsp#(content_t)) getRsp if (pendingReq.notEmpty && req_done);
+  method ActionValue#(MemRsp#(content_t)) getRsp if (req_done);
     // read internal request
     match {.isRead,.numBytes,.idx,.byteOffset,.writeen,.data,.remain} = pendingReq.first();
     // prepare response data
     Bit#(chunk_sz) rsp_data = ?;
     if (cross_boundary[0]) begin // merge with previously looked up  data
-      Bit#(chunk_sz) lowData = prev_lookup;
+      match {.pidx, .pdata} = fromMaybe(?, prev_lookup[0]);
+      Bit#(chunk_sz) lowData = pdata;
       lowData = (lowData  & bitMaskAbove(byteOffset)) >> bitsBelow(byteOffset);
       Bit#(chunk_sz) hiData  = truncate(mem.read);
       hiData  = (hiData & bitMaskBelow(byteOffset)) << bitsAbove(byteOffset);
       rsp_data = hiData | lowData;
       printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- un-aligned access response (byteOffset = %0d)", byteOffset));
-      printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- lowData 0x%0x -- prev_lookup 0x%0x, bitMaskAbove(byteOffset) 0x%0x, bitsBelow(byteOffset) %0d", lowData, prev_lookup, bitMaskAbove(byteOffset), bitsBelow(byteOffset)));
+      printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- lowData 0x%0x -- prev_lookup[0]", lowData, fshow(prev_lookup[0]),", bitMaskAbove(byteOffset) 0x%0x, bitsBelow(byteOffset) %0d", bitMaskAbove(byteOffset), bitsBelow(byteOffset)));
       printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- hiData 0x%0x -- mem.read 0x%0x, bitMaskBelow(byteOffset) 0x%0x, bitsAbove(byteOffset) %0d", hiData, mem.read, bitMaskBelow(byteOffset), bitsAbove(byteOffset)));
       cross_boundary[0] <= False; // Reset to allow sendReq to fire again
     end else begin // single cycle access (aligned or un-aligned)
@@ -168,6 +193,8 @@ module mkPortCtrl#(
       printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- single cycle response"));
       printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- rsp_data 0x%0x, mem.read 0x%0x, bitMaskAbove(byteOffset) 0x%0x, shiftAmnt %0d", rsp_data, mem.read, bitMaskAbove(byteOffset), shiftAmnt));
     end
+    // updating prev_lookup
+    prevLookupUpdt <= tuple2((cross_boundary[0]) ? idx + 1 : idx, mem.read);
     // prepare response
     Bit#(content_sz) mask = ~((~0) << largeBitsBelow(numBytes));
     MemRsp#(content_t) rsp = tagged ReadRsp unpack(truncate(rsp_data) & mask);
