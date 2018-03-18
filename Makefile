@@ -3,8 +3,9 @@ RECIPEDIR = /home/aj443/devstuff/Recipe
 BITPATDIR = /home/aj443/devstuff/BitPat
 BSVPATH = +:$(RECIPEDIR):$(BITPATDIR)
 BSC = bsc
-#BSCFLAGS = -p $(BSVPATH) -check-assert
-BSCFLAGS = -p $(BSVPATH)
+BSCFLAGS = -p $(BSVPATH) -show-range-conflict
+BSCFLAGS += -show-schedule -sched-dot
+#BSCFLAGS += -show-rule-rel \* \*
 ifdef NO_LOGS
 BSCFLAGS += -D NO_LOGS
 endif
