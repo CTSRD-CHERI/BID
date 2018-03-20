@@ -17,15 +17,8 @@ import BID_SimUtils :: *;
 ////////////////////////////////////////////////////////////////////////////////
 
 module [Module] mkISASim#(
-  FullMem#(addr_t, inst_t, data_t) mem,
-  archstate_t archState,
-  List#(function InstrDefModule#(ifc) mkMod (archstate_t st, Mem#(addr_t, data_t) dmem)) ms) ()
-provisos (
-  ArchState#(archstate_t),
-  Bits#(inst_t, MaxInstSz),
-  Bits#(addr_t, addr_sz),
-  FShow#(inst_t)
-);
+  state_t state, List#(function InstrDefModule#(ifc) mkMod (state_t st)) ms) ()
+provisos (State#(state_t));
 
   // local state
   PulseWire instDone <- mkPulseWireOR;
@@ -36,8 +29,8 @@ provisos (
   // Peek at next instruction from imem
   Reg#(Maybe#(Bit#(MaxInstSz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
   rule peek_imem;
-    inst_t rsp <- mem.inst.get();
-    latchedInst[0] <= tagged Valid pack(rsp);
+    Bit#(MaxInstSz) rsp <- getNextInst(state);
+    latchedInst[0] <= tagged Valid rsp;
     printTLogPlusArgs("BID_Core", $format("received instruction response: ", fshow(rsp)));
   endrule
   Reg#(Maybe#(Bit#(MaxInstSz))) inst = latchedInst[1];
@@ -46,7 +39,7 @@ provisos (
   endrule
 
   // harvest collections
-  BIDCollections cols <- getCollections(mem, archState, ms);
+  BIDCollections cols <- getCollections(state, ms);
 
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////
@@ -101,12 +94,12 @@ provisos (
 
   // fetch instruction on reset
   rule fetch_reset (isReset);
-    mem.inst.reqNext();
+    reqNextInst(state);
   endrule
 
   // fetch next instruction on doInstFetch
   rule fetch_next_instr (!isReset && doInstFetch[1]);
-    mem.inst.reqNext();
+    reqNextInst(state);
     doInstFetch[1] <= False;
     printTLogPlusArgs("BID_Core", $format("fetching next instr"));
     printLogPlusArgs("BID_Core", "==============================================");

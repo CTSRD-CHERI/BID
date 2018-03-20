@@ -10,17 +10,15 @@ import ModuleCollect :: *;
 import BID_SimUtils :: *;
 import BID_Interface :: *;
 
-///////////////////////////
-// Simulator state types //
+//////////////////////////
+// Simulator state type //
 ////////////////////////////////////////////////////////////////////////////////
 
-typeclass ArchState#(type a);
+typeclass State#(type a);
   function Fmt lightReport (a s);
   function Fmt fullReport (a s);
-endtypeclass
-
-typeclass World#(type a);
-  module initWorld(a);
+  function Action reqNextInst(a s);
+  function ActionValue#(Bit#(MaxInstSz)) getNextInst(a s);
 endtypeclass
 
 ///////////////////////////////////
@@ -161,16 +159,14 @@ typedef struct {
 } BIDCollections;
 
 module [Module] getCollections#(
-  FullMem#(addr_t, inst_t, data_t) mem,
-  archstate_t archState,
-  List#(function InstrDefModule#(ifc) mkMod (archstate_t st, Mem#(addr_t, data_t) dmem)) ms)
+  state_t state, List#(function InstrDefModule#(ifc) mkMod (state_t st)) ms)
   (BIDCollections);
 
   // harvest instructions
   //////////////////////////////////////////////////////////////////////////////
-  // apply state and mem, and get collections for each module
-  function applyStateAndMem (g) = g(archState, mem.data);
-  let cs <- mapM(exposeCollection,map(applyStateAndMem, ms));
+  // apply state, and get collections for each module
+  function applyState(g) = g(state);
+  let cs <- mapM(exposeCollection,map(applyState, ms));
   function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
   List#(List#(ISAInstDfn)) isaInstrModuleDefs = map(getItems, cs);
   // split definitions per type
