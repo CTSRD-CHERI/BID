@@ -7,5 +7,5 @@ FE200FA3 // SB    2,  0,  4095
 //00110193 // ADDI  3,  2,  1
 01935151 // c.li 2, 52 followed by
 40110011 // ADDI 3, 2, 1 followed by c.li 0, 4
-01010101 // unknown inst
+FFFFFFF3 // 4-byte unknown inst
 FF1FF1EF // JAL   0, -16      <=== jumps back 4 instructions, to the beginning

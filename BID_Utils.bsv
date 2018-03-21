@@ -48,6 +48,20 @@ provisos (Bits#(a, a_sz), Literal#(a));
   return cons(r0,rf);
 endmodule
 
+// Bypassable Register
+module mkBypassReg#(parameter a v) (Reg#(a)) provisos(Bits#(a, a_sz));
+  Reg#(a) r[2] <- mkCReg(2, v);
+  method Action _write(a x) = action r[0] <= x; endaction;
+  method a _read() = r[1];
+endmodule
+
+module mkBypassRegU (Reg#(a)) provisos(Bits#(a, a_sz));
+  Reg#(a) r[2] <- mkCRegU(2);
+  method Action _write(a x) = action r[0] <= x; endaction;
+  method a _read() = r[1];
+endmodule
+
+// PC register with "beginning of the cycle" + "next" interfaces
 interface PC#(type a);
   method Action _write(a x);
   method a _read();

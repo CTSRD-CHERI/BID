@@ -15,6 +15,7 @@ import BID :: *;
 typedef struct {
   Vector#(32,Reg#(Bit#(n))) regfile;
   PC#(Bit#(n)) pc;
+  Reg#(Bit#(n)) instByteSz;
   Reg#(UInt#(64)) instCnt;
   DMem#(Bit#(32), Bit#(32)) dmem;
   IMem#(Bit#(32)) imem;
@@ -24,6 +25,7 @@ module mkState (MyState#(32));
   MyState#(32) s;
   s.regfile <- mkRegFileZ;
   s.pc <- mkPC(0);
+  s.instByteSz <- mkBypassRegU;
   s.instCnt <- mkReg(0);
   FullMem#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkFullMem(4096, "test-prog.hex", s.pc.next);
   s.dmem = mem.data;
@@ -43,14 +45,18 @@ instance State#(MyState#(n));
     );
   endfunction
   function Action reqNextInst(MyState#(n) s) = s.imem.reqNext();
-  function ActionValue#(Bit#(MaxInstSz)) getNextInst(MyState#(n) s) = s.imem.get();
+  function ActionValue#(Bit#(MaxInstSz)) getNextInst(MyState#(n) s) = actionvalue
+    let inst <- s.imem.get();
+    s.instByteSz <= (inst[1:0] == 2'b11) ? 4 : 2;
+    return inst;
+  endactionvalue;
 
 endinstance
 
 function Action pcEpilogue(MyState#(32) s) =
   action
     printTLog("--------------- epilogue --------------");
-    Bit#(32) tmpPC = s.pc + 4;
+    Bit#(32) tmpPC = s.pc + s.instByteSz;
     s.pc <= tmpPC;
     s.instCnt <= s.instCnt + 1;
     printTLog($format("s.pc <= 0x%0x", tmpPC));
@@ -77,14 +83,14 @@ endaction;
 function Action instrJAL(MyState#(32) s, Bit#(1) imm20, Bit#(10) imm10_1, Bit#(1) imm11, Bit#(8) imm19_12, Bit#(5) rd) = action
   Bit#(32) imm = {signExtend(imm20),imm19_12,imm11,imm10_1,1'b0};
   s.pc <= s.pc + imm;
-  s.regfile[rd] <= s.pc + 4;
+  s.regfile[rd] <= s.pc + s.instByteSz;
   printTLog($format("jal %0d, %0d", rd, imm));
 endaction;
 
 function Action instrBEQ (MyState#(32) s, Bit#(1) imm12, Bit#(6) imm10_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(4) imm4_1, Bit#(1) imm11) = action
   Bit#(32) imm = {signExtend(imm12),imm11,imm10_5,imm4_1,1'b0};
   if (s.regfile[rs1] == s.regfile[rs2]) s.pc <= s.pc + imm;
-  else s.pc <= s.pc + 4;
+  else s.pc <= s.pc + s.instByteSz;
   printTLog($format("beq", rs1, rs2, imm));
 endaction;
 
@@ -113,7 +119,7 @@ endaction;
 function Action instrC_LI(MyState#(32) s, Bit#(1) imm_5, Bit#(5) rd, Bit#(5) imm4_0) = action
   s.regfile[rd] <= signExtend({imm_5, imm4_0});
   printTLog($format("c.li %0d, %0d", rd, {imm_5, imm4_0}));
-  s.pc <= s.pc + 2;
+  s.pc <= s.pc + s.instByteSz;
 endaction;
 
 function List#(Action) unkInst(MyState#(32) s, Bit#(MaxInstSz) inst) = list(
