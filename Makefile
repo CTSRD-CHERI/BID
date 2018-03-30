@@ -30,4 +30,4 @@ verilog: *.bsv
 
 .PHONY: clean
 clean:
-	rm -f *.cxx *.o *.h *.ba *.bo *.so *.ipinfo *.v vpi_wrapper_*.c $(TOPMOD)
+	rm -f *.sched *.dot *.cxx *.o *.h *.ba *.bo *.so *.ipinfo *.v vpi_wrapper_*.c $(TOPMOD)
