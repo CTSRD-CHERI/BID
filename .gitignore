@@ -1,0 +1,5 @@
+*.o
+*.bo
+*.ba
+*.sched
+*.dot
