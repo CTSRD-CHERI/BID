@@ -87,14 +87,11 @@ provisos (State#(state_t));
   // other rules
   //////////////////////////////////////////////////////////////////////////////
 
-  // clear reseet after first cycle
-  rule clear_reset (isReset);
-    isReset <= False;
-  endrule
-
-  // fetch instruction on reset
-  rule fetch_reset (isReset);
+  rule on_reset (isReset);
+    // fetch instruction on reset
     reqNextInst(state);
+    // clear reseet after first cycle
+    isReset <= False;
   endrule
 
   // fetch next instruction on doInstFetch

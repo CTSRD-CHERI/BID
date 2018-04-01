@@ -3,19 +3,20 @@
 import Vector :: *;
 import List :: *;
 import RegFile :: *;
-import BRAMCore :: *;
 import FIFO :: *;
 import SpecialFIFOs :: *;
 
 import BID_Interface :: *;
 import BID_SimUtils :: *;
+import BID_Utils_BRAM :: *;
 
 // size expressed in bytes
 module mkPortCtrl#(
   String name,
-  BRAM_PORT_BE#(Bit#(idx_sz), Bit#(chunk_sz), chunk_byte_sz) mem
+  BRAM#(idx_sz, chunk_sz ) mem
 ) (Mem#(addr_t, content_t)) provisos(
   Bits#(addr_t, addr_sz), Bits#(content_t, content_sz),
+  Div#(chunk_sz, BitsPerByte, chunk_byte_sz),
   Div#(content_sz, BitsPerByte, content_byte_sz),
   Div#(chunk_sz, content_sz, content_per_chunk),
   Log#(content_byte_sz, ofst_sz), Log#(chunk_byte_sz, chunk_ofst_sz),
@@ -127,7 +128,7 @@ module mkPortCtrl#(
     match {.isRead,.numBytes,.idx,.byteOffset,.writeen,.data,.remain} = pendingReq.first();
     // derive shift values
     if (isRead) begin // READ
-      prevLookupUpdt <= tuple2(idx, mem.read);
+      prevLookupUpdt <= tuple2(idx, mem.peek);
       req_done <= True; // signal end of request
       printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- done read"));
     end else begin // WRITE
@@ -180,21 +181,21 @@ module mkPortCtrl#(
       match {.pidx, .pdata} = fromMaybe(?, prev_lookup[0]);
       Bit#(chunk_sz) lowData = pdata;
       lowData = (lowData  & bitMaskAbove(byteOffset)) >> bitsBelow(byteOffset);
-      Bit#(chunk_sz) hiData  = truncate(mem.read);
+      Bit#(chunk_sz) hiData  = truncate(mem.peek);
       hiData  = (hiData & bitMaskBelow(byteOffset)) << bitsAbove(byteOffset);
       rsp_data = hiData | lowData;
       printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- un-aligned access response (byteOffset = %0d)", byteOffset));
       printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- lowData 0x%0x -- prev_lookup[0]", lowData, fshow(prev_lookup[0]),", bitMaskAbove(byteOffset) 0x%0x, bitsBelow(byteOffset) %0d", bitMaskAbove(byteOffset), bitsBelow(byteOffset)));
-      printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- hiData 0x%0x -- mem.read 0x%0x, bitMaskBelow(byteOffset) 0x%0x, bitsAbove(byteOffset) %0d", hiData, mem.read, bitMaskBelow(byteOffset), bitsAbove(byteOffset)));
+      printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- hiData 0x%0x -- mem.peek 0x%0x, bitMaskBelow(byteOffset) 0x%0x, bitsAbove(byteOffset) %0d", hiData, mem.peek, bitMaskBelow(byteOffset), bitsAbove(byteOffset)));
       cross_boundary[0] <= False; // Reset to allow sendReq to fire again
     end else begin // single cycle access (aligned or un-aligned)
       let shiftAmnt = (byteOffset == 0) ? 0 : bitsBelow(byteOffset);
-      rsp_data  = (mem.read & bitMaskAbove(byteOffset)) >> shiftAmnt;
+      rsp_data  = (mem.peek & bitMaskAbove(byteOffset)) >> shiftAmnt;
       printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- single cycle response"));
-      printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- rsp_data 0x%0x, mem.read 0x%0x, bitMaskAbove(byteOffset) 0x%0x, shiftAmnt %0d", rsp_data, mem.read, bitMaskAbove(byteOffset), shiftAmnt));
+      printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- rsp_data 0x%0x, mem.peek 0x%0x, bitMaskAbove(byteOffset) 0x%0x, shiftAmnt %0d", rsp_data, mem.peek, bitMaskAbove(byteOffset), shiftAmnt));
     end
     // updating prev_lookup
-    prevLookupUpdt <= tuple2((cross_boundary[0]) ? idx + 1 : idx, mem.read);
+    prevLookupUpdt <= tuple2((cross_boundary[0]) ? idx + 1 : idx, mem.peek);
     // prepare response
     Bit#(content_sz) mask = ~((~0) << largeBitsBelow(numBytes));
     MemRsp#(content_t) rsp = tagged ReadRsp unpack(truncate(rsp_data) & mask);
