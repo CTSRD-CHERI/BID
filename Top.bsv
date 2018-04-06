@@ -168,7 +168,7 @@ endmodule
 // Instanciate the ISA simulator //
 ////////////////////////////////////////////////////////////////////////////////
 
-module top ();
+module bid ();
 
   MyState#(32) s <- mkState;
 
