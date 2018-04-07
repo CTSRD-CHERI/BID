@@ -21,6 +21,16 @@ typeclass State#(type a);
   function ActionValue#(Bit#(MaxInstSz)) getNextInst(a s);
 endtypeclass
 
+///////////////////
+// GuardedRecipe //
+////////////////////////////////////////////////////////////////////////////////
+typedef struct {
+  Bool guard;
+  Recipe recipe;
+} GuardedRecipe;
+function Bool getGuard(GuardedRecipe x) = x.guard;
+function Recipe getRecipe(GuardedRecipe x) = x.recipe;
+
 ///////////////////////////////////
 // Types to harvest instructions //
 ////////////////////////////////////////////////////////////////////////////////
