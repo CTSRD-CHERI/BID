@@ -15,8 +15,8 @@ CC = gcc-4.9
 CXX = g++-4.9
 
 # Top level module
-TOPFILE = Top.bsv
-TOPMOD = bid
+TOPFILE = Example.bsv
+TOPMOD = bidExample
 
 .PHONY: sim
 sim: $(TOPMOD)
