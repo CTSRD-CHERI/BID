@@ -25,13 +25,13 @@ module BID_BRAM2 (
   input CLK;
   // port A
   input en_a;
-  input wen_a;
+  input [(width_a/8)-1:0] wen_a;
   input [widthad_a-1:0] address_a;
   input [width_a-1:0] data_a;
   output [width_a-1:0] q_a;
   // port B
   input en_b;
-  input wen_b;
+  input [(width_b/8)-1:0]wen_b;
   input [widthad_b-1:0] address_b;
   input [width_b-1:0] data_b;
   output [width_b-1:0] q_b;
