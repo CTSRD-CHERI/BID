@@ -44,7 +44,9 @@ provisos (State#(state_t));
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////
   function getGuardedRecipe(x) = tpl_2(x)(fromMaybe(?, inst));
-  List#(GuardedRecipe) grs = map(getGuardedRecipe, cols.instrDefs);
+  function Bool getGuard(Guarded#(Recipe) x) = x.guard;
+  function Recipe getRecipe(Guarded#(Recipe) x) = x.val;
+  List#(Guarded#(Recipe)) grs = map(getGuardedRecipe, cols.instrDefs);
   List#(Bool) guards = map(getGuard, grs);
   Bool isUnkInst = ! any(id, guards);
   List#(Tuple2#(Rules, RecipeFSM)) allInsts <- mapM(compileRules, map(getRecipe, grs));

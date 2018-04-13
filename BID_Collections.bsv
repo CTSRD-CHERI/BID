@@ -21,16 +21,6 @@ typeclass State#(type a);
   function ActionValue#(Bit#(MaxInstSz)) getNextInst(a s);
 endtypeclass
 
-///////////////////
-// GuardedRecipe //
-////////////////////////////////////////////////////////////////////////////////
-typedef struct {
-  Bool guard;
-  Recipe recipe;
-} GuardedRecipe;
-function Bool getGuard(GuardedRecipe x) = x.guard;
-function Recipe getRecipe(GuardedRecipe x) = x.recipe;
-
 ///////////////////////////////////
 // Types to harvest instructions //
 ////////////////////////////////////////////////////////////////////////////////
@@ -41,7 +31,7 @@ typedef MAX_INST_SZ MaxInstSz;
 typedef 32 MaxInstSz;
 `endif
 
-typedef Tuple2#(String, function GuardedRecipe f(Bit#(MaxInstSz) subject)) InstrDefn;
+typedef Tuple2#(String, function Guarded#(Recipe) f(Bit#(MaxInstSz) subject)) InstrDefn;
 typedef function Recipe f(Bit#(MaxInstSz) subject) UnkInstrDefn;
 
 typedef union tagged {
@@ -71,10 +61,10 @@ endtypeclass
 instance DefineInstr#(Action);
   module [InstrDefModule] defineInstr#(String name, BitPat#(n, t, Action) p, function t f)()
   provisos (Add#(a__, n, MaxInstSz));
-    function GuardedRecipe flipPat(Bit#(MaxInstSz) x);
+    function Guarded#(Recipe) flipPat(Bit#(MaxInstSz) x);
       Bit#(n) subject = truncate(x);
       Tuple2#(Bool, Action) res = p(subject, f);
-      return GuardedRecipe { guard: tpl_1(res), recipe: rAct(tpl_2(res)) };
+      return Guarded { guard: tpl_1(res), val: rAct(tpl_2(res)) };
     endfunction
     addToCollection(InstDef(tuple2(name,flipPat)));
   endmodule
@@ -85,7 +75,7 @@ instance DefineInstr#(List#(Action));
   provisos (Add#(a__, n, MaxInstSz));
     function flipPat(x);
       Tuple2#(Bool, List#(Action)) res = p(truncate(x), f);
-      return GuardedRecipe { guard: tpl_1(res), recipe: rPar(map(rAct, tpl_2(res))) };
+      return Guarded { guard: tpl_1(res), val: rPar(map(rAct, tpl_2(res))) };
     endfunction
     addToCollection(InstDef(tuple2(name, flipPat)));
   endmodule
@@ -96,7 +86,7 @@ instance DefineInstr#(Recipe);
   provisos (Add#(a__, n, MaxInstSz));
     function flipPat(x);
       Tuple2#(Bool, Recipe) res = p(truncate(x), f);
-      return GuardedRecipe { guard: tpl_1(res), recipe: tpl_2(res) };
+      return Guarded { guard: tpl_1(res), val: tpl_2(res) };
     endfunction
     addToCollection(InstDef(tuple2(name, flipPat)));
   endmodule
