@@ -63,8 +63,8 @@ instance DefineInstr#(Action);
   provisos (Add#(a__, n, MaxInstSz));
     function Guarded#(Recipe) flipPat(Bit#(MaxInstSz) x);
       Bit#(n) subject = truncate(x);
-      Tuple2#(Bool, Action) res = p(subject, f);
-      return Guarded { guard: tpl_1(res), val: rAct(tpl_2(res)) };
+      Tuple2#(GCol#(Bit#(0)), Action) res = p(subject, f);
+      return Guarded { guard: tpl_1(res).guard, val: rAct(tpl_2(res)) };
     endfunction
     addToCollection(InstDef(tuple2(name,flipPat)));
   endmodule
@@ -74,8 +74,8 @@ instance DefineInstr#(List#(Action));
   module [InstrDefModule] defineInstr#(String name, BitPat#(n, t, List#(Action)) p, function t f)()
   provisos (Add#(a__, n, MaxInstSz));
     function flipPat(x);
-      Tuple2#(Bool, List#(Action)) res = p(truncate(x), f);
-      return Guarded { guard: tpl_1(res), val: rPar(map(rAct, tpl_2(res))) };
+      Tuple2#(GCol#(Bit#(0)), List#(Action)) res = p(truncate(x), f);
+      return Guarded { guard: tpl_1(res).guard, val: rPar(map(rAct, tpl_2(res))) };
     endfunction
     addToCollection(InstDef(tuple2(name, flipPat)));
   endmodule
@@ -85,8 +85,8 @@ instance DefineInstr#(Recipe);
   module [InstrDefModule] defineInstr#(String name, BitPat#(n, t, Recipe) p, function t f)()
   provisos (Add#(a__, n, MaxInstSz));
     function flipPat(x);
-      Tuple2#(Bool, Recipe) res = p(truncate(x), f);
-      return Guarded { guard: tpl_1(res), val: tpl_2(res) };
+      Tuple2#(GCol#(Bit#(0)), Recipe) res = p(truncate(x), f);
+      return Guarded { guard: tpl_1(res).guard, val: tpl_2(res) };
     endfunction
     addToCollection(InstDef(tuple2(name, flipPat)));
   endmodule
