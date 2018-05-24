@@ -63,6 +63,7 @@ module BID_BRAM2 (
   parameter read_during_write_mode_port_b = "NEW_DATA_NO_NBE_READ";
   // others
   parameter byte_size = 8;
+  parameter ram_block_type = "AUTO";
   parameter read_during_write_mode_mixed_ports = "OLD_DATA";
   parameter init_file = "UNUSED";
   parameter init_file_layout = "PORT_A";
@@ -108,6 +109,7 @@ module BID_BRAM2 (
     .clock_enable_output_b(clock_enable_output_b),
     .read_during_write_mode_port_b(read_during_write_mode_port_b),
     // others
+    .ram_block_type(ram_block_type),
     .byte_size(byte_size),
     .init_file(init_file),
     .init_file_layout(init_file_layout),

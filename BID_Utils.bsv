@@ -209,7 +209,7 @@ provisos(
   end else begin
     // BRAM2
     BRAM2#(idx_sz, chunk_sz, idx_sz, chunk_sz)
-      m <- mkAlteraBRAM2(size/valueOf(chunk_byte_sz), file);
+      m <- mkAlteraBRAM2(size, file);
     Mem#(addr_t, t0) p0Ifc <- mkPortCtrl("port0", m.p0);
     Mem#(addr_t, t1) p1Ifc <- mkPortCtrl("port1", m.p1);
     // interface
