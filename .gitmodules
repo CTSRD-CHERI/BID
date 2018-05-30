@@ -1,6 +1,6 @@
 [submodule "Recipe"]
 	path = Recipe
-	url = git@github.com:CTSRD-CHERI/Recipe.git
+	url = https://github.com/CTSRD-CHERI/Recipe.git
 [submodule "BitPat"]
 	path = BitPat
-	url = git@github.com:CTSRD-CHERI/BitPat.git
+	url = https://github.com/CTSRD-CHERI/BitPat.git
