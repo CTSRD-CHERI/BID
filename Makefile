@@ -27,8 +27,8 @@
 #
 
 # BSV compiler flags
-RECIPEDIR = /home/aj443/devstuff/Recipe
-BITPATDIR = /home/aj443/devstuff/BitPat
+RECIPEDIR = Recipe
+BITPATDIR = BitPat
 BSVPATH = +:$(RECIPEDIR):$(BITPATDIR)
 BSC = bsc
 BSCFLAGS = -p $(BSVPATH) -show-range-conflict
@@ -39,8 +39,8 @@ BSCFLAGS += -D NO_LOGS
 endif
 # Bluespec is not compatible with gcc > 4.9
 # This is actually problematic when using $test$plusargs
-CC = gcc-4.9
-CXX = g++-4.9
+CC = gcc-4.8
+CXX = g++-4.8
 
 # Top level module
 TOPFILE = Example.bsv
