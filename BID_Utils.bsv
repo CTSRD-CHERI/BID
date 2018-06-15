@@ -31,6 +31,7 @@ import List :: *;
 import RegFile :: *;
 import FIFO :: *;
 import SpecialFIFOs :: *;
+import Printf :: *;
 
 import BID_Interface :: *;
 import BID_Utils_UnalignedMem :: *;
@@ -98,6 +99,14 @@ module mkPC#(a startVal) (PC#(a)) provisos(Bits#(a, n));
   method Action _write(a x) = action r[0] <= x; endaction;
   method a _read() = r[0];
   method a next() = r[1];
+endmodule
+
+// make an undefined register yeild compile time errors on reads and writes
+module mkRegUndef#(String name) (Reg#(a));
+  method a _read() =
+    error(sprintf("%s register read but not initialised", name));
+  method Action _write(a val) =
+    error(sprintf("%s register written but not initialised", name));
 endmodule
 
 // Combinational primitives
