@@ -129,14 +129,15 @@ void load_hex (const char * filename, unsigned char * buff, unsigned long long b
 
 typedef struct {
   unsigned char * const data;
-  unsigned int size;
+  unsigned long long size;
 } mem_t;
 
 unsigned long long mem_create(unsigned int * memSize)
 {
   mem_t * m = (mem_t *) malloc (sizeof(mem_t));
-  m->size = *memSize;
-  *(unsigned char **)&m->data = (unsigned char *) malloc (*memSize * sizeof(unsigned char));
+  m->size = *((unsigned long long*) memSize);
+  *(unsigned char **)&m->data = (unsigned char *) malloc (m->size * sizeof(unsigned char));
+  printf("---- allocated memory size of 0x%0llx\n", m->size);
   return (unsigned long long) m;
 }
 
@@ -153,10 +154,11 @@ void mem_read(unsigned int * ret_data, unsigned long long mem_ptr, unsigned int 
   mem_t * m = (mem_t *) mem_ptr;
   unsigned long long a = (unsigned long long) *addr_ptr;
   unsigned long long s = (unsigned long long) *size_ptr;
-  unsigned int i;
+  unsigned long long i;
   for (i = 0; i < s; i++)
   {
     ((unsigned char*)(ret_data))[i] = m->data[(a+i)%(m->size)];
+    if (a+i >= m->size) printf("---- @ 0x%0llx >= memory size 0x%0llx, reading from @ 0x%0llx instead\n", a+i, m->size, (a+i)%(m->size));
   }
   //printf("---- reading @ 0x%04x, %d bytes, ret_data = 0x%08x\n", a, s, *ret_data);
   //print_mem(m->data, a - 8, a + 8, 4);
@@ -170,11 +172,12 @@ void mem_write(unsigned long long mem_ptr, unsigned int * addr_ptr, unsigned int
   unsigned long long be = (unsigned long long) *be_ptr;
   unsigned char * d     = (unsigned char *) data_ptr;
 
-  unsigned int i;
+  unsigned long long i;
   for (i = 0; i < s; i++)
   {
     if (be & 0x1) m->data[(a+i)%(m->size)] = d[i];
     be >>= 1;
+    if (a+i >= m->size) printf("---- @ 0x%0llx >= memory size 0x%0llx, writing to @ 0x%0llx instead\n", a+i, m->size, (a+i)%(m->size));
   }
 
   //printf("---- writing @ 0x%04x, %d bytes, be = %08x, data = 0x%08x\n", a, s, be, *d);
