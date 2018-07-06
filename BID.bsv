@@ -28,12 +28,14 @@
 
 package BID;
 
+import BID_BasicTypes :: *;
 import BID_Core :: *;
 import BID_Utils :: *;
 import BID_SimUtils :: *;
 import BID_Interface :: *;
 import BID_Collections :: *;
 
+export BID_BasicTypes :: *;
 export BID_Core :: *;
 export BID_Utils :: *;
 export BID_SimUtils :: *;

@@ -59,3 +59,5 @@ verilog: *.bsv
 .PHONY: clean
 clean:
 	rm -f *.sched *.dot *.cxx *.o *.h *.ba *.bo *.so *.ipinfo vpi_wrapper_*.c $(TOPMOD)
+	make -C $(RECIPEDIR) clean
+	make -C $(BITPATDIR) clean

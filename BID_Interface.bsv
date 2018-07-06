@@ -27,6 +27,41 @@
  */
 
 import Printf :: *;
+import List :: *;
+
+import BID_BasicTypes :: *;
+
+//////////////////////////
+// Virtualize interface //
+//////////////////////////
+
+typeclass Virtualizable#(type a);
+  module virtualize#(a x, Integer n)(Array#(a));
+endtypeclass
+
+instance Virtualizable#(Reg#(a));
+  module virtualize#(Reg#(a) r, Integer n)(Array#(Reg#(a)));
+
+    // static priority
+    Wire#(Bool) canWrite[n] <- mkDCWire(n, True);
+
+    // interface
+    Reg#(a) ifc[n];
+
+    for (Integer i = 0; i < n; i = i + 1) begin
+      ifc[i] = interface Reg#(a);
+        method _write(x) if (canWrite[i]) = action
+          if (i < n-1) canWrite[i+1] <= False;
+          r <= x;
+        endaction;
+        method _read = r._read;
+      endinterface;
+    end
+
+    return ifc;
+  endmodule
+
+endinstance
 
 /////////////////////
 // Interface types //
@@ -112,6 +147,40 @@ interface Mem#(type addr_t, type content_t);
   method ActionValue#(MemRsp#(content_t)) getRsp ();
 endinterface
 typedef Mem DMem;
+
+// virtualizable instance for Mem, with static priority
+instance Virtualizable#(Mem#(a,b));
+  module virtualize#(Mem#(a,b) mem, Integer n)(Array#(Mem#(a,b)));
+
+    // static priority
+    Wire#(Bool) canSendReq[n]  <- mkDCWire(n, True);
+    List#(Array#(Reg#(Bool))) canGetRsp <- replicateM(n, mkCReg(2, False));
+    Reg#(Bool) pendingReq[2]   <- mkCReg(2, False);
+
+    // interface
+    Mem#(a,b) ifc[n];
+
+    for (Integer i = 0; i < n; i = i + 1) begin
+      ifc[i] = interface Mem#(a,b);
+        method sendReq(x) if (canSendReq[i] && !pendingReq[1]) = action
+          if (i < n-1) canSendReq[i+1] <= False;
+          canGetRsp[i][0] <= True;
+          pendingReq[1] <= True;
+          mem.sendReq(x);
+        endaction;
+        method getRsp if (canGetRsp[i][1]) = actionvalue
+          pendingReq[0] <= False;
+          canGetRsp[i][1] <= False;
+          let rsp <- mem.getRsp;
+          return rsp;
+        endactionvalue;
+      endinterface;
+    end
+
+    return ifc;
+
+  endmodule
+endinstance
 
 interface Mem2#(type addr_t, type t0, type t1);
   interface Mem#(addr_t, t0) p0;

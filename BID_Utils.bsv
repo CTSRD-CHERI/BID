@@ -26,114 +26,14 @@
  * @BERI_LICENSE_HEADER_END@
  */
 
-import Vector :: *;
-import List :: *;
-import RegFile :: *;
 import FIFO :: *;
+import RegFile :: *;
 import SpecialFIFOs :: *;
-import Printf :: *;
 
 import BID_Interface :: *;
+import BID_Utils_BRAM :: *;
 import BID_Utils_UnalignedMem :: *;
 import BID_SimUtils :: *;
-import BID_Utils_BRAM :: *;
-
-// Nice friendly list constructor lifted from Bluecheck's sources:
-// https://github.com/CTSRD-CHERI/bluecheck.git
-////////////////////////////////////////////////////////////////////////////////
-
-typeclass MkList#(type a, type b) dependencies (a determines b);
-  function a mkList(List#(b) acc);
-endtypeclass
-
-instance MkList#(List#(b), b);
-  function List#(b) mkList(List#(b) acc) = List::reverse(acc);
-endinstance
-
-instance MkList#(function a f(b val), b) provisos (MkList#(a, b));
-  function mkList(acc, val) = mkList(Cons(val, acc));
-endinstance
-
-function a list() provisos (MkList#(a, b));
-  return mkList(Nil);
-endfunction
-
-// Architectural state helpers
-////////////////////////////////////////////////////////////////////////////////
-
-// Read-only register
-module mkROReg#(parameter a v) (Reg#(a));
-  method Action _write (a _) = action endaction;
-  method a _read() = v;
-endmodule
-
-// Register file with read-only 0 register (set to 0)
-module mkRegFileZ (Vector#(n, Reg#(a)))
-provisos (Bits#(a, a_sz), Literal#(a));
-  Reg#(a) r0 <- mkROReg(0);
-  Vector#(TSub#(n, 1), Reg#(a)) rf <- replicateM(mkReg(0));
-  return cons(r0,rf);
-endmodule
-
-// Bypassable Register
-module mkBypassReg#(parameter a v) (Reg#(a)) provisos(Bits#(a, a_sz));
-  Reg#(a) r[2] <- mkCReg(2, v);
-  method Action _write(a x) = action r[0] <= x; endaction;
-  method a _read() = r[1];
-endmodule
-
-module mkBypassRegU (Reg#(a)) provisos(Bits#(a, a_sz));
-  Reg#(a) r[2] <- mkCRegU(2);
-  method Action _write(a x) = action r[0] <= x; endaction;
-  method a _read() = r[1];
-endmodule
-
-// PC register with "beginning of the cycle" + "next" interfaces
-interface PC#(type a);
-  method Action _write(a x);
-  method a _read();
-  method a next();
-endinterface
-module mkPC#(a startVal) (PC#(a)) provisos(Bits#(a, n));
-  Reg#(a) r[2] <- mkCReg(2, startVal);
-  method Action _write(a x) = action r[0] <= x; endaction;
-  method a _read() = r[0];
-  method a next() = r[1];
-endmodule
-
-// make an undefined register yeild compile time errors on reads and writes
-module mkRegUndef#(String name) (Reg#(a));
-  method a _read() =
-    error(sprintf("%s register read but not initialised", name));
-  method Action _write(a val) =
-    error(sprintf("%s register written but not initialised", name));
-endmodule
-
-// Combinational primitives
-////////////////////////////////////////////////////////////////////////////////
-
-// signed comparison functions
-function Bool signedLT (Bit#(n) a, Bit#(n) b);
-  Int#(n) sa = unpack(a);
-  Int#(n) sb = unpack(b);
-  return sa < sb;
-endfunction
-function Bool signedGT (Bit#(n) a, Bit#(n) b);
-  Int#(n) sa = unpack(a);
-  Int#(n) sb = unpack(b);
-  return sa > sb;
-endfunction
-function Bool signedGE (Bit#(n) a, Bit#(n) b);
-  Int#(n) sa = unpack(a);
-  Int#(n) sb = unpack(b);
-  return sa >= sb;
-endfunction
-
-// arithmetic right shift
-function Bit#(n) arithRightShift (Bit#(n) a, Bit#(m) b);
-  Int#(n) sa = unpack(a);
-  return pack(sa >> b);
-endfunction
 
 ////////////////////////////////////////
 // Shared data and instruction memory //
@@ -167,7 +67,10 @@ provisos (Bits#(addr_t, addr_sz), Bits#(t0, t0_sz), Bits#(t1, t1_sz));
   interface Mem p0;
     method Action sendReq (MemReq#(addr_t, t0) req) if (isInitialized);
       case (req) matches
-        tagged ReadReq .r: rsp0.enq(ReadRsp(mem_read(mem_ptr, r.addr, readBitPO(r.numBytes))));
+        tagged ReadReq .r: begin
+          let addr = r.addr;
+          rsp0.enq(ReadRsp(mem_read(mem_ptr, addr, readBitPO(r.numBytes))));
+        end
         tagged WriteReq .w: mem_write(mem_ptr, w.addr, fromInteger(valueOf(TDiv#(SizeOf#(t0), 8))), w.byteEnable, w.data);
       endcase
     endmethod
@@ -177,7 +80,10 @@ provisos (Bits#(addr_t, addr_sz), Bits#(t0, t0_sz), Bits#(t1, t1_sz));
   interface Mem p1;
     method Action sendReq (MemReq#(addr_t, t1) req) if (isInitialized);
       case (req) matches
-        tagged ReadReq .r: rsp1.enq(ReadRsp(mem_read(mem_ptr, r.addr, readBitPO(r.numBytes))));
+        tagged ReadReq .r: begin
+          let addr = r.addr;
+          rsp1.enq(ReadRsp(mem_read(mem_ptr, addr, readBitPO(r.numBytes))));
+        end
         tagged WriteReq .w: mem_write(mem_ptr, w.addr, fromInteger(valueOf(TDiv#(SizeOf#(t1), 8))), w.byteEnable, w.data);
       endcase
     endmethod

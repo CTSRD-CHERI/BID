@@ -271,6 +271,19 @@ module bidExample (Probes);
   // definitions overwrite the definition.
   mkISASim(s, list(mkBaseISA, mkExtensionISA));
 
+  /*
+  // XXX TEST virtualize Reg
+  Reg#(Bit#(32)) tmp <- mkReg(0);
+  let r <- virtualize(asReg(tmp), 4);
+  Reg#(Bit#(2)) cnt <- mkReg(0);
+  rule count; cnt <= cnt + 1; endrule
+  rule test0 (cnt == 0); r[0] <= 0; printTLog("test0"); endrule
+  rule test1 (cnt == 1); r[1] <= 1; printTLog("test1"); endrule
+  rule test2 (cnt == 2); r[2] <= 2; printTLog("test2"); endrule
+  rule test3 (cnt == 3); r[3] <= 3; printTLog("test3"); endrule
+  // XXX TEST
+  */
+
   // Probing interface -- usefull when synthesizing
   method Bit#(32) peekPC() = s.pc;
 
