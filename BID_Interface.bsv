@@ -30,6 +30,7 @@ import Printf :: *;
 import List :: *;
 
 import BID_BasicTypes :: *;
+import BID_SimUtils :: *;
 
 //////////////////////////
 // Virtualize interface //
@@ -133,7 +134,7 @@ typedef union tagged {
     Bit#(`DATA_BYTES) byteEnable;
     content_t data;
   } WriteReq;
-} MemReq#(type addr_t, type content_t) deriving (FShow);
+} MemReq#(type addr_t, type content_t) deriving (Bits, FShow);
 
 // Mem response
 typedef union tagged {
@@ -149,33 +150,36 @@ endinterface
 typedef Mem DMem;
 
 // virtualizable instance for Mem, with static priority
-instance Virtualizable#(Mem#(a,b));
-  module virtualize#(Mem#(a,b) mem, Integer n)(Array#(Mem#(a,b)));
+import FIFO :: *;
+import SpecialFIFOs :: *;
+instance Virtualizable#(Mem#(addr_t, content_t)) provisos (Bits#(content_t, content_sz), Bits#(addr_t, addr_sz));
 
-    // static priority
-    Wire#(Bool) canSendReq[n]  <- mkDCWire(n, True);
-    List#(Array#(Reg#(Bool))) canGetRsp <- replicateM(n, mkCReg(2, False));
-    Reg#(Bool) pendingReq[2]   <- mkCReg(2, False);
+  module virtualize#(Mem#(addr_t, content_t) mem, Integer n)(Array#(Mem#(addr_t, content_t)));
 
-    // interface
-    Mem#(a,b) ifc[n];
+    `define MAX_IDX_SZ 4
+    if (log2(n) > `MAX_IDX_SZ)
+      error(sprintf("Asked for %0d interfaces, virtualize can't support more than %0d", n, 2**`MAX_IDX_SZ));
+
+    Mem#(addr_t, content_t) ifc[n];
+    FIFO#(Bit#(`MAX_IDX_SZ)) ifcIdx <- mkFIFO;
+    Rules memRules = emptyRules;
 
     for (Integer i = 0; i < n; i = i + 1) begin
-      ifc[i] = interface Mem#(a,b);
-        method sendReq(x) if (canSendReq[i] && !pendingReq[1]) = action
-          if (i < n-1) canSendReq[i+1] <= False;
-          canGetRsp[i][0] <= True;
-          pendingReq[1] <= True;
-          mem.sendReq(x);
-        endaction;
-        method getRsp if (canGetRsp[i][1]) = actionvalue
-          pendingReq[0] <= False;
-          canGetRsp[i][1] <= False;
-          let rsp <- mem.getRsp;
-          return rsp;
-        endactionvalue;
+      let reqFF <- mkFIFO;
+      //let reqFF <- mkBypassFIFO;
+      let rspFF <- mkFIFO;
+      Reg#(Bool) willGetRsp[2] <- mkCReg(2, False);
+      memRules = rJoinDescendingUrgency(memRules, rules
+        rule doSendReq; mem.sendReq(reqFF.first); reqFF.deq; ifcIdx.enq(fromInteger(i)); endrule
+        rule doGetRsp (ifcIdx.first == fromInteger(i)); let rsp <- mem.getRsp; rspFF.enq(rsp); ifcIdx.deq; endrule
+      endrules);
+      ifc[i] = interface Mem;
+        method sendReq = reqFF.enq;
+        method getRsp = actionvalue rspFF.deq; return rspFF.first; endactionvalue;
       endinterface;
     end
+
+    addRules(memRules);
 
     return ifc;
 
