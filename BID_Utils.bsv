@@ -69,7 +69,8 @@ provisos (Bits#(addr_t, addr_sz), Bits#(t0, t0_sz), Bits#(t1, t1_sz));
       case (req) matches
         tagged ReadReq .r: begin
           let addr = r.addr;
-          rsp0.enq(ReadRsp(mem_read(mem_ptr, addr, readBitPO(r.numBytes))));
+          let nbytes = readBitPO(r.numBytes);
+          rsp0.enq(ReadRsp(mem_read(mem_ptr, addr, nbytes)));
         end
         tagged WriteReq .w: mem_write(mem_ptr, w.addr, fromInteger(valueOf(TDiv#(SizeOf#(t0), 8))), w.byteEnable, w.data);
       endcase
@@ -82,7 +83,8 @@ provisos (Bits#(addr_t, addr_sz), Bits#(t0, t0_sz), Bits#(t1, t1_sz));
       case (req) matches
         tagged ReadReq .r: begin
           let addr = r.addr;
-          rsp1.enq(ReadRsp(mem_read(mem_ptr, addr, readBitPO(r.numBytes))));
+          let nbytes = readBitPO(r.numBytes);
+          rsp1.enq(ReadRsp(mem_read(mem_ptr, addr, nbytes)));
         end
         tagged WriteReq .w: mem_write(mem_ptr, w.addr, fromInteger(valueOf(TDiv#(SizeOf#(t1), 8))), w.byteEnable, w.data);
       endcase
