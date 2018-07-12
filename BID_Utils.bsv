@@ -44,7 +44,7 @@ import BID_SimUtils :: *;
 import "BDPI" mem_create = function ActionValue#(Bit#(64)) mem_create(st s)
                              provisos (Bits#(st, sw));
 import "BDPI" mem_init   = function Action mem_init(Bit#(64) m, String f, Bit#(64) o);
-import "BDPI" mem_read   = function dt mem_read(Bit#(64) m, at a, st s)
+import "BDPI" mem_read   = function ActionValue#(dt) mem_read(Bit#(64) m, at a, st s)
                              provisos (Bits#(dt, dw), Bits#(at, aw), Bits#(st, sw));
 import "BDPI" mem_write  = function Action mem_write(Bit#(64) m, at a, st s, bet be, dt d)
                              provisos (Bits#(at, aw), Bits#(st, sw), Bits#(bet, bew), Bits#(dt, dw));
@@ -70,7 +70,8 @@ provisos (Bits#(addr_t, addr_sz), Bits#(t0, t0_sz), Bits#(t1, t1_sz));
         tagged ReadReq .r: begin
           let addr = r.addr;
           let nbytes = readBitPO(r.numBytes);
-          rsp0.enq(ReadRsp(mem_read(mem_ptr, addr, nbytes)));
+          let res <- mem_read(mem_ptr, addr, nbytes);
+          rsp0.enq(ReadRsp(res));
         end
         tagged WriteReq .w: mem_write(mem_ptr, w.addr, fromInteger(valueOf(TDiv#(SizeOf#(t0), 8))), w.byteEnable, w.data);
       endcase
@@ -84,7 +85,8 @@ provisos (Bits#(addr_t, addr_sz), Bits#(t0, t0_sz), Bits#(t1, t1_sz));
         tagged ReadReq .r: begin
           let addr = r.addr;
           let nbytes = readBitPO(r.numBytes);
-          rsp1.enq(ReadRsp(mem_read(mem_ptr, addr, nbytes)));
+          let res <- mem_read(mem_ptr, addr, nbytes);
+          rsp1.enq(ReadRsp(res));
         end
         tagged WriteReq .w: mem_write(mem_ptr, w.addr, fromInteger(valueOf(TDiv#(SizeOf#(t1), 8))), w.byteEnable, w.data);
       endcase
