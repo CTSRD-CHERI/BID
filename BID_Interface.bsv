@@ -165,9 +165,8 @@ instance Virtualizable#(Mem#(addr_t, content_t)) provisos (Bits#(content_t, cont
     Rules memRules = emptyRules;
 
     for (Integer i = 0; i < n; i = i + 1) begin
-      let reqFF <- mkFIFO;
-      //let reqFF <- mkBypassFIFO;
-      let rspFF <- mkFIFO;
+      let reqFF <- mkBypassFIFO;
+      let rspFF <- mkBypassFIFO;
       Reg#(Bool) willGetRsp[2] <- mkCReg(2, False);
       memRules = rJoinDescendingUrgency(memRules, rules
         rule doSendReq; mem.sendReq(reqFF.first); reqFF.deq; ifcIdx.enq(fromInteger(i)); endrule
