@@ -169,8 +169,15 @@ instance Virtualizable#(Mem#(addr_t, content_t)) provisos (Bits#(content_t, cont
       let rspFF <- mkBypassFIFO;
       Reg#(Bool) willGetRsp[2] <- mkCReg(2, False);
       memRules = rJoinDescendingUrgency(memRules, rules
-        rule doSendReq; mem.sendReq(reqFF.first); reqFF.deq; ifcIdx.enq(fromInteger(i)); endrule
-        rule doGetRsp (ifcIdx.first == fromInteger(i)); let rsp <- mem.getRsp; rspFF.enq(rsp); ifcIdx.deq; endrule
+        rule doSendReq;
+          let req = reqFF.first;
+          reqFF.deq; mem.sendReq(req);
+          if (req matches tagged ReadReq .*) ifcIdx.enq(fromInteger(i));
+        endrule
+        rule doGetRsp (ifcIdx.first == fromInteger(i));
+          let rsp <- mem.getRsp;
+          rspFF.enq(rsp); ifcIdx.deq;
+        endrule
       endrules);
       ifc[i] = interface Mem;
         method sendReq = reqFF.enq;
