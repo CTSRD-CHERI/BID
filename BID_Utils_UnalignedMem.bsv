@@ -29,6 +29,8 @@
 import Vector :: *;
 import List :: *;
 import RegFile :: *;
+import ClientServer :: *;
+import GetPut :: *;
 import FIFO :: *;
 import SpecialFIFOs :: *;
 
@@ -170,7 +172,8 @@ module mkPortCtrl#(
 
   // interface
   //////////////////////////////////////////////////////////////////////////////
-  method Action sendReq (MemReq#(addr_t, content_t) req) if (!cross_boundary[1] && !cross_boundary_access_fire); // XXX possibly test for not full of pipeline fifo ?
+  interface request = interface Put;
+  method Action put (MemReq#(addr_t, content_t) req) if (!cross_boundary[1] && !cross_boundary_access_fire); // XXX possibly test for not full of pipeline fifo ?
     printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- ", fshow(req)));
     // "unpack" the request
     `IN_REQ inReq = unpackReq(req);
@@ -197,8 +200,9 @@ module mkPortCtrl#(
     req_done <= isSingleCycle;
     // perform the BRAMCore access
     memLookup <= tuple3(req_writeen, req_idx, req_data);
-  endmethod
-  method ActionValue#(MemRsp#(content_t)) getRsp if (req_done);
+  endmethod endinterface;
+  interface response = interface Get;
+  method ActionValue#(MemRsp#(content_t)) get if (req_done);
     // read internal request
     match {.isRead,.numBytes,.idx,.byteOffset,.writeen,.data,.remain} = pendingReq.first();
     // prepare response data
@@ -229,6 +233,6 @@ module mkPortCtrl#(
     printTLogPlusArgs("BID_Utils", $format("port controller (", fshow(name), ") -- ", fshow(rsp)));
     pendingReq.deq(); // retire request
     return rsp;
-  endmethod
+  endmethod endinterface;
 
 endmodule

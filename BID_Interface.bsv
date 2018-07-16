@@ -64,6 +64,60 @@ instance Virtualizable#(Reg#(a));
 
 endinstance
 
+// virtualizable instance for Server, with static priority
+import ClientServer :: *;
+import GetPut :: *;
+import FIFO :: *;
+import SpecialFIFOs :: *;
+
+typeclass NeedRsp#(type req_t);
+  function Bool needRsp(req_t req);
+endtypeclass
+
+instance Virtualizable#(Server#(req_t, rsp_t))
+provisos (NeedRsp#(req_t), Bits#(req_t, a__), Bits#(rsp_t, b__));
+
+  module virtualize#(Server#(req_t, rsp_t) server, Integer n)(Array#(Server#(req_t, rsp_t)));
+
+    `define MAX_IDX_SZ 4
+    if (log2(n) > `MAX_IDX_SZ)
+      error(sprintf("Asked for %0d interfaces, virtualize can't support more than %0d", n, 2**`MAX_IDX_SZ));
+
+    Server#(req_t, rsp_t) ifc[n];
+    FIFO#(Bit#(`MAX_IDX_SZ)) ifcIdx <- mkFIFO;
+    Rules ifcRules = emptyRules;
+
+    for (Integer i = 0; i < n; i = i + 1) begin
+      let reqFF <- mkBypassFIFO;
+      let rspFF <- mkBypassFIFO;
+      ifcRules = rJoinDescendingUrgency(ifcRules, rules
+        rule doSendReq;
+          reqFF.deq;
+          let req = reqFF.first;
+          server.request.put(req);
+          if (needRsp(req)) ifcIdx.enq(fromInteger(i));
+        endrule
+        rule doGetRsp (ifcIdx.first == fromInteger(i));
+          ifcIdx.deq;
+          let rsp <- server.response.get;
+          rspFF.enq(rsp);
+        endrule
+      endrules);
+      ifc[i] = interface Server;
+        interface request = interface Put; method put = reqFF.enq; endinterface;
+        interface response = interface Get;
+          method get = actionvalue rspFF.deq; return rspFF.first; endactionvalue;
+        endinterface;
+      endinterface;
+    end
+
+    addRules(ifcRules);
+
+    return ifc;
+
+  endmodule
+endinstance
+
 /////////////////////
 // Interface types //
 ////////////////////////////////////////////////////////////////////////////////
@@ -136,6 +190,12 @@ typedef union tagged {
   } WriteReq;
 } MemReq#(type addr_t, type content_t) deriving (Bits, FShow);
 
+instance NeedRsp#(MemReq#(a,b));
+  function needRsp(r);
+    if (r matches tagged ReadReq .*) return True; else return False;
+  endfunction
+endinstance
+
 // Mem response
 typedef union tagged {
   content_t ReadRsp;
@@ -143,54 +203,8 @@ typedef union tagged {
 } MemRsp#(type content_t) deriving (Bits, FShow);
 
 // Mem interface
-interface Mem#(type addr_t, type content_t);
-  method Action sendReq (MemReq#(addr_t, content_t) req);
-  method ActionValue#(MemRsp#(content_t)) getRsp ();
-endinterface
+typedef Server#(MemReq#(addr_t, content_t), MemRsp#(content_t)) Mem#(type addr_t, type content_t);
 typedef Mem DMem;
-
-// virtualizable instance for Mem, with static priority
-import FIFO :: *;
-import SpecialFIFOs :: *;
-instance Virtualizable#(Mem#(addr_t, content_t)) provisos (Bits#(content_t, content_sz), Bits#(addr_t, addr_sz));
-
-  module virtualize#(Mem#(addr_t, content_t) mem, Integer n)(Array#(Mem#(addr_t, content_t)));
-
-    `define MAX_IDX_SZ 4
-    if (log2(n) > `MAX_IDX_SZ)
-      error(sprintf("Asked for %0d interfaces, virtualize can't support more than %0d", n, 2**`MAX_IDX_SZ));
-
-    Mem#(addr_t, content_t) ifc[n];
-    FIFO#(Bit#(`MAX_IDX_SZ)) ifcIdx <- mkFIFO;
-    Rules memRules = emptyRules;
-
-    for (Integer i = 0; i < n; i = i + 1) begin
-      let reqFF <- mkBypassFIFO;
-      let rspFF <- mkBypassFIFO;
-      Reg#(Bool) willGetRsp[2] <- mkCReg(2, False);
-      memRules = rJoinDescendingUrgency(memRules, rules
-        rule doSendReq;
-          let req = reqFF.first;
-          reqFF.deq; mem.sendReq(req);
-          if (req matches tagged ReadReq .*) ifcIdx.enq(fromInteger(i));
-        endrule
-        rule doGetRsp (ifcIdx.first == fromInteger(i));
-          let rsp <- mem.getRsp;
-          rspFF.enq(rsp); ifcIdx.deq;
-        endrule
-      endrules);
-      ifc[i] = interface Mem;
-        method sendReq = reqFF.enq;
-        method getRsp = actionvalue rspFF.deq; return rspFF.first; endactionvalue;
-      endinterface;
-    end
-
-    addRules(memRules);
-
-    return ifc;
-
-  endmodule
-endinstance
 
 interface Mem2#(type addr_t, type t0, type t1);
   interface Mem#(addr_t, t0) p0;

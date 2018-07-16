@@ -27,6 +27,8 @@
  */
 
 import Vector :: *;
+import ClientServer :: *;
+import GetPut :: *;
 
 import BitPat :: *;
 import BID :: *;
@@ -92,12 +94,12 @@ instance State#(ArchState);
   endfunction
   // Two functions to describe the behaviour the simulator should follow when
   // fetching instructions
-  function Action reqNextInst(ArchState s) = s.imem.sendReq(tagged ReadReq {
+  function Action reqNextInst(ArchState s) = s.imem.request.put(tagged ReadReq {
     addr: s.pc.next, // note the use of the "next" method of the PC register
     numBytes: 4 // request four bytes for an instruction
   });
   function ActionValue#(Bit#(MaxInstSz)) getNextInst(ArchState s) = actionvalue
-    let rsp <- s.imem.getRsp(); // get the memory response
+    let rsp <- s.imem.response.get(); // get the memory response
     case (rsp) matches
       tagged ReadRsp .val: begin
         // update the current instruction size
@@ -162,11 +164,11 @@ function List#(Action) instrLB(ArchState s, Bit#(12) imm, Bit#(5) rs1, Bit#(5) r
   action
     printTLog($format("lb %0d, %0d, %0d - step 1", rd, rs1, imm));
     Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
-    s.dmem.sendReq(tagged ReadReq {addr: addr, numBytes: 1});
+    s.dmem.request.put(tagged ReadReq {addr: addr, numBytes: 1});
   endaction,
   action
     printTLog($format("lb %0d, %0d, %0d - step 2", rd, rs1, imm));
-    let rsp <- s.dmem.getRsp();
+    let rsp <- s.dmem.response.get();
     case (rsp) matches tagged ReadRsp .r: s.regfile[rd] <= r; endcase
     pcEpilogue(s);
   endaction
@@ -175,7 +177,7 @@ function List#(Action) instrLB(ArchState s, Bit#(12) imm, Bit#(5) rs1, Bit#(5) r
 function Action instrSB(ArchState s, Bit#(7) imm11_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(5) imm4_0) = action
   Bit#(32) imm = {signExtend(imm11_5), imm4_0};
   Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
-  s.dmem.sendReq(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile[rs2]});
+  s.dmem.request.put(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile[rs2]});
   printTLog($format("sb %0d, %0d, %0d", rs1, rs2, imm));
   pcEpilogue(s);
 endaction;

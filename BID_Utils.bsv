@@ -28,6 +28,8 @@
 
 import FIFO :: *;
 import RegFile :: *;
+import GetPut :: *;
+import ClientServer :: *;
 import SpecialFIFOs :: *;
 
 import BID_Interface :: *;
@@ -65,7 +67,7 @@ provisos (Bits#(addr_t, addr_sz), Bits#(t0, t0_sz), Bits#(t1, t1_sz));
   FIFO#(MemRsp#(t1)) rsp1 <- mkPipelineFIFO;
 
   interface Mem p0;
-    method Action sendReq (MemReq#(addr_t, t0) req) if (isInitialized);
+    interface request = interface Put; method put (req) if (isInitialized) = action
       case (req) matches
         tagged ReadReq .r: begin
           let addr = r.addr;
@@ -75,12 +77,14 @@ provisos (Bits#(addr_t, addr_sz), Bits#(t0, t0_sz), Bits#(t1, t1_sz));
         end
         tagged WriteReq .w: mem_write(mem_ptr, w.addr, fromInteger(valueOf(TDiv#(SizeOf#(t0), 8))), w.byteEnable, w.data);
       endcase
-    endmethod
-    method ActionValue#(MemRsp#(t0)) getRsp if (isInitialized) = actionvalue rsp0.deq; return rsp0.first; endactionvalue;
+    endaction; endinterface;
+    interface response = interface Get; method get if (isInitialized) = actionvalue
+      rsp0.deq; return rsp0.first;
+    endactionvalue; endinterface;
   endinterface
 
   interface Mem p1;
-    method Action sendReq (MemReq#(addr_t, t1) req) if (isInitialized);
+    interface request = interface Put; method put (req) if (isInitialized) = action
       case (req) matches
         tagged ReadReq .r: begin
           let addr = r.addr;
@@ -90,8 +94,10 @@ provisos (Bits#(addr_t, addr_sz), Bits#(t0, t0_sz), Bits#(t1, t1_sz));
         end
         tagged WriteReq .w: mem_write(mem_ptr, w.addr, fromInteger(valueOf(TDiv#(SizeOf#(t1), 8))), w.byteEnable, w.data);
       endcase
-    endmethod
-    method ActionValue#(MemRsp#(t1)) getRsp if (isInitialized) = actionvalue rsp1.deq; return rsp1.first; endactionvalue;
+      endaction; endinterface;
+    interface response = interface Get; method get if (isInitialized) = actionvalue
+      rsp1.deq; return rsp1.first;
+    endactionvalue; endinterface;
   endinterface
 
 endmodule
@@ -165,12 +171,12 @@ provisos(
 
   Mem2#(addr_t, inst_t, data_t) mem <- mkSharedMem2(size, file);
   interface IMem inst;
-    method Action reqNext () =  mem.p0.sendReq(tagged ReadReq {
+    method Action reqNext () =  mem.p0.request.put(tagged ReadReq {
       addr: pc,
       numBytes: fromInteger(valueOf(TDiv#(SizeOf#(inst_t), BitsPerByte)))
     });
     method ActionValue#(inst_t) get ();
-      let rsp <- mem.p0.getRsp();
+      let rsp <- mem.p0.response.get();
       return case (rsp) matches
         tagged ReadRsp .val: val;
         default: ?;
