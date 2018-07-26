@@ -29,6 +29,7 @@
 import Printf :: *;
 import List :: *;
 
+import AXI :: *;
 import BID_BasicTypes :: *;
 import BID_SimUtils :: *;
 
@@ -196,11 +197,40 @@ instance NeedRsp#(MemReq#(a,b));
   endfunction
 endinstance
 
+instance ToAXIAWLiteFlit#(MemReq#(addr_t, data_t), addr_sz) provisos (Bits#(addr_t, addr_sz));
+  function toAXIAWLiteFlit(x);
+    let w = x.WriteReq;
+    return AWLiteFlit {awaddr: pack(w.addr), awprot: 0};
+  endfunction
+endinstance
+
+instance ToAXIWLiteFlit#(MemReq#(addr_t, data_t), data_sz) provisos (Bits#(data_t, data_sz));
+  function toAXIWLiteFlit(x);
+    let w = x.WriteReq;
+    return WLiteFlit {wdata: pack(w.data), wstrb: w.byteEnable};
+  endfunction
+endinstance
+
+instance ToAXIARLiteFlit#(MemReq#(addr_t, data_t), addr_sz) provisos (Bits#(addr_t, addr_sz));
+  function toAXIARLiteFlit(x);
+    let r = x.ReadReq;
+    return ARLiteFlit {araddr: pack(r.addr), arprot: 0};
+  endfunction
+endinstance
+
 // Mem response
 typedef union tagged {
   content_t ReadRsp;
   void Failure;
 } MemRsp#(type content_t) deriving (Bits, FShow);
+
+instance FromAXIRLiteFlit#(MemRsp#(data_t), data_sz) provisos (Bits#(data_t, data_sz));
+  function fromAXIRLiteFlit(x) = ReadRsp(unpack(x.rdata));
+endinstance
+
+instance FromAXIBLiteFlit#(MemRsp#(data_t));
+  function fromAXIBLiteFlit(x) = ?;
+endinstance
 
 // Mem interface
 typedef Server#(MemReq#(addr_t, content_t), MemRsp#(content_t)) Mem#(type addr_t, type content_t);

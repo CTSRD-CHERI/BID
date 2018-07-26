@@ -38,12 +38,25 @@ import BID_Interface :: *;
 import BID_Collections :: *;
 import BID_SimUtils :: *;
 
+interface BIDProbes;
+  method Bool latchedInst0Valid;
+  method Bit#(MaxInstSz) latchedInst0;
+  method Bool latchedInst1Valid;
+  method Bit#(MaxInstSz) latchedInst1;
+  method Bool doInstFetch0;
+  method Bool doInstFetch1;
+  method Bool peek_imem_fired;
+  method Bool on_inst_commit_fired;
+  method Bool fetch_next_instr_fired;
+endinterface
+
 //////////////////////////
 // ISA simulator engine //
 ////////////////////////////////////////////////////////////////////////////////
 
 module [Module] mkISASim#(
-  state_t state, List#(function InstrDefModule#(ifc) mkMod (state_t st)) ms) ()
+  state_t state, List#(function InstrDefModule#(ifc) mkMod (state_t st)) ms)
+  (BIDProbes)
 provisos (State#(state_t));
 
   // local state
@@ -54,7 +67,9 @@ provisos (State#(state_t));
 
   // Peek at next instruction from imem
   Reg#(Maybe#(Bit#(MaxInstSz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
+  PulseWire w_peek_imem_fired <- mkPulseWire;
   rule peek_imem;
+    w_peek_imem_fired.send;
     Bit#(MaxInstSz) rsp <- getNextInst(state);
     latchedInst[0] <= tagged Valid rsp;
     printTLogPlusArgs("BID_Core", $format("received instruction response: ", fshow(rsp)));
@@ -77,7 +92,7 @@ provisos (State#(state_t));
   Bool isUnkInst = ! any(id, guards);
   List#(Tuple2#(Rules, RecipeFSM)) allInsts <- mapM(compileRules, map(getRecipe, grs));
   module mkRunInst#(Bool g, RecipeFSM m) ();
-    rule runInst (g);
+    rule runInst (g && isValid(inst));
       m.start();
     endrule
     rule pulseInstDone (m.isLastCycle);
@@ -86,7 +101,9 @@ provisos (State#(state_t));
   endmodule
   zipWithM(mkRunInst, guards, map(tpl_2, allInsts));
   // general rule triggered on instruction commit
+  PulseWire w_on_inst_commit_fired <- mkPulseWire;
   rule on_inst_commit (instDone);
+    w_on_inst_commit_fired.send;
     instCommitted <= instCommitted + 1;
     inst <= tagged Invalid;
     doInstFetch[0] <= True;
@@ -123,7 +140,9 @@ provisos (State#(state_t));
   endrule
 
   // fetch next instruction on doInstFetch
+  PulseWire w_fetch_next_instr_fired <- mkPulseWire;
   rule fetch_next_instr (!isReset && doInstFetch[1]);
+    w_fetch_next_instr_fired.send;
     reqNextInst(state);
     doInstFetch[1] <= False;
     printTLogPlusArgs("BID_Core", $format("fetching next instr"));
@@ -150,5 +169,16 @@ provisos (State#(state_t));
       if (doPrintIPC) printIPC (instCommitted, countCycles);
     endrule
   end
+
+  // populate probes
+  method latchedInst0 = fromMaybe(?,latchedInst[0]);
+  method latchedInst0Valid = isValid(latchedInst[0]);
+  method latchedInst1 = fromMaybe(?,latchedInst[1]);
+  method latchedInst1Valid = isValid(latchedInst[1]);
+  method doInstFetch0 = doInstFetch[0];
+  method doInstFetch1 = doInstFetch[1];
+  method peek_imem_fired = w_peek_imem_fired;
+  method on_inst_commit_fired = w_on_inst_commit_fired;
+  method fetch_next_instr_fired = w_fetch_next_instr_fired;
 
 endmodule
