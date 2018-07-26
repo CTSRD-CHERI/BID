@@ -33,8 +33,7 @@ import List :: *;
 import Printf :: *;
 import ModuleCollect :: *;
 
-import BID_SimUtils :: *;
-import BID_Interface :: *;
+import BlueUtils :: *;
 
 //////////////////////////
 // Simulator state type //

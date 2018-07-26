@@ -34,9 +34,8 @@ import ModuleCollect :: *;
 import Recipe :: *;
 import BitPat :: *;
 
-import BID_Interface :: *;
 import BID_Collections :: *;
-import BID_SimUtils :: *;
+import BlueUtils :: *;
 
 interface BIDProbes;
   method Bool latchedInst0Valid;

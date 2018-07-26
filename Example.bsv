@@ -31,6 +31,7 @@ import ClientServer :: *;
 import GetPut :: *;
 
 import BitPat :: *;
+import BlueUtils :: *;
 import BID :: *;
 
 // Example use of the BID framework

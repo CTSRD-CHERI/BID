@@ -29,14 +29,32 @@
 # BSV compiler flags
 RECIPEDIR = Recipe
 BITPATDIR = BitPat
-BSVPATH = +:$(RECIPEDIR):$(BITPATDIR)
+BLUESTUFFDIR = BlueStuff
+AXIDIR = $(BLUESTUFFDIR)/AXI
+BLUEUTILSDIR = $(BLUESTUFFDIR)/BlueUtils
+BSVPATH = +:$(RECIPEDIR):$(BITPATDIR):$(AXIDIR):$(BLUEUTILSDIR)
 BSC = bsc
-BSCFLAGS = -p $(BSVPATH) -show-range-conflict
-BSCFLAGS += -show-schedule -sched-dot
-#BSCFLAGS += -show-rule-rel \* \*
+BSCFLAGS = -p $(BSVPATH)
 ifdef NO_LOGS
 BSCFLAGS += -D NO_LOGS
 endif
+
+# generated files directories
+BUILDDIR = build
+BDIR = $(BUILDDIR)/bdir
+SIMDIR = $(BUILDDIR)/simdir
+
+OUTPUTDIR = output
+VDIR = $(OUTPUTDIR)/vdir
+INFODIR = $(OUTPUTDIR)/info
+
+BSCFLAGS += -bdir $(BDIR)
+BSCFLAGS += -info-dir $(INFODIR)
+BSCFLAGS += -show-schedule -sched-dot
+BSCFLAGS += -show-range-conflict
+#BSCFLAGS += -show-rule-rel \* \*
+#BSCFLAGS += -steps-warn-interval n
+
 # Bluespec is not compatible with gcc > 4.9
 # This is actually problematic when using $test$plusargs
 CC = gcc-4.8
@@ -46,18 +64,29 @@ CXX = g++-4.8
 TOPFILE = Example.bsv
 TOPMOD = bidExample
 
-.PHONY: sim
-sim: $(TOPMOD)
+# Top level module
+SIMTOPFILE = Example.bsv
+SIMTOPMOD = bidExample
+VERILOGTOPFILE = $(SIMTOPFILE)
+VERILOGTOPMOD = $(SIMTOPMOD)
 
-$(TOPMOD): *.bsv *.c
-	$(BSC) $(BSCFLAGS) -sim -g $(TOPMOD) -u $(TOPFILE)
-	CC=$(CC) CXX=$(CXX) $(BSC) $(BSCFLAGS) -sim -o $(TOPMOD) -e $(TOPMOD) *.c
+
+.PHONY: sim verilog
+
+all: verilog sim
+sim: $(SIMTOPMOD)
+
+$(SIMTOPMOD): *.bsv
+	mkdir -p $(INFODIR) $(BDIR) $(SIMDIR) $(OUTPUTDIR)
+	$(BSC) $(BSCFLAGS) -simdir $(SIMDIR) -sim -g $(SIMTOPMOD) -u $(SIMTOPFILE)
+	CC=$(CC) CXX=$(CXX) $(BSC) $(BSCFLAGS) -simdir $(SIMDIR) -sim -o $(OUTPUTDIR)/$(SIMTOPMOD) -e $(SIMTOPMOD) $(BLUEUTILSDIR)/*.c
 
 verilog: *.bsv
-	$(BSC) $(BSCFLAGS) -D NO_LOGS -verilog -g $(TOPMOD) -u $(TOPFILE)
+	mkdir -p $(INFODIR) $(BDIR) $(VDIR)
+	$(BSC) $(BSCFLAGS) -vdir $(VDIR) -opt-undetermined-vals -unspecified-to X -D NO_LOGS -verilog -g $(VERILOGTOPMOD) -u $(VERILOGTOPFILE)
 
-.PHONY: clean
+.PHONY: clean mrproper
 clean:
-	rm -f *.sched *.dot *.cxx *.o *.h *.ba *.bo *.so *.ipinfo vpi_wrapper_*.c $(TOPMOD)
-	make -C $(RECIPEDIR) clean
-	make -C $(BITPATDIR) clean
+	rm -rf $(BDIR) $(SIMDIR)
+mrproper: clean
+	rm -rf $(INFODIR) $(VDIR) $(OUTPUTDIR) $(BUILDDIR)

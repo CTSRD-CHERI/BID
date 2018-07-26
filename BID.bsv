@@ -28,18 +28,10 @@
 
 package BID;
 
-import BID_BasicTypes :: *;
 import BID_Core :: *;
-import BID_Utils :: *;
-import BID_SimUtils :: *;
-import BID_Interface :: *;
 import BID_Collections :: *;
 
-export BID_BasicTypes :: *;
 export BID_Core :: *;
-export BID_Utils :: *;
-export BID_SimUtils :: *;
-export BID_Interface :: *;
 export BID_Collections :: *;
 
 export BID :: *;
@@ -58,4 +50,4 @@ function Action terminateSim(s state, Fmt msg) provisos (State#(s)) = action
   $finish(0);
 endaction;
 
-endpackage: BID
+endpackage

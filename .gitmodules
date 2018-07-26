@@ -4,3 +4,6 @@
 [submodule "BitPat"]
 	path = BitPat
 	url = https://github.com/CTSRD-CHERI/BitPat.git
+[submodule "BlueStuff"]
+	path = BlueStuff
+	url = https://github.com/CTSRD-CHERI/BlueStuff.git
