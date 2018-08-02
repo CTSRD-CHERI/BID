@@ -115,14 +115,19 @@ endinstance
 
 // Example of an epilogue helper function that can be invoked at the end of
 // an instruction's semantic function.
-function Action pcEpilogue(ArchState s) =
-  action
-    printTLog("--------------- epilogue --------------");
-    Bit#(32) tmpPC = s.pc + s.instByteSz;
-    s.pc <= tmpPC;
-    s.instCnt <= s.instCnt + 1;
-    printTLog($format("s.pc <= 0x%0x", tmpPC));
-  endaction;
+function Action pcEpilogue(ArchState s) = action
+  printTLog("--------------- epilogue --------------");
+  Bit#(32) tmpPC = s.pc + s.instByteSz;
+  s.pc <= tmpPC;
+  s.instCnt <= s.instCnt + 1;
+  printTLog($format("s.pc <= 0x%0x", tmpPC));
+endaction;
+
+// Example of an epilogue helper that can be invoked after each instruction.
+Action alwaysEpilogue = action
+  printTLog("--------------- always epilogue --------------");
+  printTLog($format("always happening"));
+endaction;
 
 ////////////////////////////
 // Define instruction set //
@@ -228,6 +233,8 @@ module [InstrDefModule] mkBaseISA#(ArchState s) ();
   defineUnkInstr(unkInst(s));
   // XXX Uncomment to get multiple unknown instruction definition error.
   //defineUnkInstr(unkInst);
+  // this defines an epilogue to happen after each instruction
+  defineEpilogue(alwaysEpilogue);
 
 endmodule
 
@@ -251,6 +258,11 @@ module [InstrDefModule] mkExtensionISA#(ArchState s) ();
 
   // XXX Uncomment to get multiple in module instruction definition error
   //defineInstr("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
+
+  // this defines a guarded epilogue to happen after each instruction
+  Reg#(Bit#(16)) cnt <- mkReg(0);
+  rule count; cnt <= cnt + 1; endrule
+  defineEpilogue(Guarded { guard: (cnt[1:0] == 0), val: action printTLog("!!! cnt[1:0] == 0 !!!"); endaction });
 
 endmodule
 

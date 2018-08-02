@@ -61,6 +61,7 @@ provisos (State#(state_t));
   // local state
   PulseWire instDone <- mkPulseWireOR;
   Reg#(Bool) doInstFetch[2] <- mkCReg(2, False);
+  Reg#(Bool) doEpilogue[2]  <- mkCReg(2, False);
   Reg#(Bool) isReset <- mkReg(True);
   Reg#(Bit#(64)) instCommitted <- mkReg(0);
 
@@ -81,11 +82,11 @@ provisos (State#(state_t));
   // harvest collections
   BIDCollections cols <- getCollections(state, ms);
 
+  function Bool getGuard(Guarded#(Recipe) x) = x.guard;
+  function Recipe getRecipe(Guarded#(Recipe) x) = x.val;
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////
   function getGuardedRecipe(x) = tpl_2(x)(fromMaybe(?, inst));
-  function Bool getGuard(Guarded#(Recipe) x) = x.guard;
-  function Recipe getRecipe(Guarded#(Recipe) x) = x.val;
   List#(Guarded#(Recipe)) grs = map(getGuardedRecipe, cols.instrDefs);
   List#(Bool) guards = map(getGuard, grs);
   Bool isUnkInst = ! any(id, guards);
@@ -105,7 +106,7 @@ provisos (State#(state_t));
     w_on_inst_commit_fired.send;
     instCommitted <= instCommitted + 1;
     inst <= tagged Invalid;
-    doInstFetch[0] <= True;
+    doEpilogue[0]  <= True;
     printTLogPlusArgs("BID_Core", $format("Committing instruction rule"));
     printLogPlusArgs("BID_Core", "==============================================");
   endrule
@@ -119,14 +120,30 @@ provisos (State#(state_t));
     endrule
     rule unkInstDone (m.isLastCycle);
       inst <= tagged Invalid;
-      doInstFetch[0] <= True;
+      doEpilogue[0]  <= True;
     endrule
   endmodule
   mkRunUnkInst(!isReset && isValid(inst) && isUnkInst, tpl_2(unkInst));
 
-  // Add all compiled rules
+  // Add all compiled instruction rules
   //////////////////////////////////////////////////////////////////////////////
   addRules(fold(rJoinMutuallyExclusive, cons(tpl_1(unkInst), map(tpl_1, allInsts))));
+
+  // run epilogue actions
+  //////////////////////////////////////////////////////////////////////////////
+  if (length(cols.epiDefs) > 0) begin
+    let epilogue <- compile(rPar(zipWith(rWhen, map(getGuard, cols.epiDefs), map(getRecipe, cols.epiDefs))));
+    rule epilogueStart(doEpilogue[1]); epilogue.start(); endrule
+    rule epilogueDone(epilogue.isLastCycle);
+      doEpilogue[1]  <= False;
+      doInstFetch[0] <= True;
+    endrule
+  end else begin
+    rule epilogue (doEpilogue[1]);
+      doEpilogue[1]  <= False;
+      doInstFetch[0] <= True;
+    endrule
+  end
 
   // other rules
   //////////////////////////////////////////////////////////////////////////////

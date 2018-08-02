@@ -58,20 +58,26 @@ typedef 32 MaxInstSz;
 
 typedef Tuple2#(String, function Guarded#(Recipe) f(Bit#(MaxInstSz) subject)) InstrDefn;
 typedef function Recipe f(Bit#(MaxInstSz) subject) UnkInstrDefn;
+typedef Guarded#(Recipe) EpiDefn;
 
 typedef union tagged {
   InstrDefn InstDef;
   UnkInstrDefn UnkInstDef;
+  EpiDefn EpiDef;
 } ISAInstDfn;
 
 function List#(InstrDefn) getInstDef (ISAInstDfn e) =
   e matches tagged InstDef .x ? cons(x, Nil) : Nil;
 function List#(UnkInstrDefn) getUnkInstDef (ISAInstDfn e) =
   e matches tagged UnkInstDef .x ? cons(x, Nil) : Nil;
+function List#(EpiDefn) getEpiDef (ISAInstDfn e) =
+  e matches tagged EpiDef .x ? cons(x, Nil) : Nil;
 function List#(InstrDefn) getInstDefs(List#(ISAInstDfn) defs) =
   concat(map(getInstDef,defs));
 function List#(UnkInstrDefn) getUnkInstDefs(List#(ISAInstDfn) defs) =
   concat(map(getUnkInstDef,defs));
+function List#(EpiDefn) getEpiDefs(List#(ISAInstDfn) defs) =
+  concat(map(getEpiDef,defs));
 
 typedef ModuleCollect#(ISAInstDfn, ifc) InstrDefModule#(type ifc);
 
@@ -174,6 +180,24 @@ instance DefineUnkInstr#(List#(Action));
   endmodule
 endinstance
 
+////////////////////////////////////////////////////////////////////////////////
+
+typeclass DefineEpilogue#(type a);
+  module [InstrDefModule] defineEpilogue#(a x)();
+endtypeclass
+
+instance DefineEpilogue#(Action);
+  module [InstrDefModule] defineEpilogue#(Action x)();
+    addToCollection(EpiDef(Guarded { guard: True, val: rAct(x) }));
+  endmodule
+endinstance
+
+instance DefineEpilogue#(Guarded#(Action));
+  module [InstrDefModule] defineEpilogue#(Guarded#(Action) x)();
+    addToCollection(EpiDef(Guarded { guard: x.guard, val: rAct(x.val) }));
+  endmodule
+endinstance
+
 /////////////////
 // Collections //
 ////////////////////////////////////////////////////////////////////////////////
@@ -181,6 +205,7 @@ endinstance
 typedef struct {
   List#(InstrDefn) instrDefs;
   UnkInstrDefn unkInstrDef;
+  List#(EpiDefn) epiDefs;
 } BIDCollections;
 
 module [Module] getCollections#(
@@ -198,6 +223,7 @@ module [Module] getCollections#(
   let func = compose(checkInstrDefns,compose(sortBy(cmpInstrDefn),getInstDefs));
   let instrModuleDefs = map(func, isaInstrModuleDefs);
   let unkInstrModuleDefs = map(getUnkInstDefs, isaInstrModuleDefs);
+  let epiModuleDefs = map(getEpiDefs, isaInstrModuleDefs);
   // instruction definitions
   List#(InstrDefn) instrDefs = mergeInstrDefns(instrModuleDefs);
   // unknown instruction definitions
@@ -205,10 +231,13 @@ module [Module] getCollections#(
   let unkInstrDefsLen = length(unkInstrDefs);
   if (unkInstrDefsLen != 1)
     errorM(sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
+  // flatten list of epilogues
+  let epiDefs = concat(epiModuleDefs);
 
   return BIDCollections {
     instrDefs: instrDefs,
-    unkInstrDef: head(unkInstrDefs)
+    unkInstrDef: head(unkInstrDefs),
+    epiDefs: epiDefs
   };
 
 endmodule
