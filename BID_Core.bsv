@@ -58,32 +58,57 @@ module [Module] mkISASim#(
   (BIDProbes)
 provisos (State#(state_t));
 
-  // local state
+  // local signals and registers
   PulseWire instDone <- mkPulseWireOR;
   Reg#(Bool) doInstFetch[2] <- mkCReg(2, False);
   Reg#(Bool) doEpilogue[2]  <- mkCReg(2, False);
   Reg#(Bool) isReset <- mkReg(True);
   Reg#(Bit#(64)) instCommitted <- mkReg(0);
+  Reg#(Maybe#(Bit#(MaxInstSz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
+  Reg#(Maybe#(Bit#(MaxInstSz))) inst = latchedInst[1];
+
+  // harvest collections
+  BIDCollections cols <- getCollections(state, ms);
+  function Bool getGuard(Guarded#(Recipe) x) = x.guard;
+  function Recipe getRecipe(Guarded#(Recipe) x) = x.val;
+
+  // probing wires
+  PulseWire w_peek_imem_fired <- mkPulseWire;
+  PulseWire w_on_inst_commit_fired <- mkPulseWire;
+  PulseWire w_fetch_next_instr_fired <- mkPulseWire;
+
+  // reset rule
+  //////////////////////////////////////////////////////////////////////////////
+
+  rule on_reset (isReset);
+    // fetch instruction on reset
+    reqNextInst(state);
+    // clear reseet after first cycle
+    isReset <= False;
+  endrule
+
+  // instruction fetch rule
+  //////////////////////////////////////////////////////////////////////////////
+  rule fetch_next_instr (!isReset && doInstFetch[1]);
+    w_fetch_next_instr_fired.send; // probing
+    reqNextInst(state);
+    doInstFetch[1] <= False;
+    printTLogPlusArgs("BID_Core", $format("fetching next instr"));
+    printLogPlusArgs("BID_Core", "==============================================");
+  endrule
 
   // Peek at next instruction from imem
-  Reg#(Maybe#(Bit#(MaxInstSz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
-  PulseWire w_peek_imem_fired <- mkPulseWire;
+  //////////////////////////////////////////////////////////////////////////////
   rule peek_imem;
-    w_peek_imem_fired.send;
+    w_peek_imem_fired.send; // probing
     Bit#(MaxInstSz) rsp <- getNextInst(state);
     latchedInst[0] <= tagged Valid rsp;
     printTLogPlusArgs("BID_Core", $format("received instruction response: ", fshow(rsp)));
   endrule
-  Reg#(Maybe#(Bit#(MaxInstSz))) inst = latchedInst[1];
   rule debug_current_inst;
     printTLogPlusArgs("BID_Core", $format("current instructions: ", fshow(inst)));
   endrule
 
-  // harvest collections
-  BIDCollections cols <- getCollections(state, ms);
-
-  function Bool getGuard(Guarded#(Recipe) x) = x.guard;
-  function Recipe getRecipe(Guarded#(Recipe) x) = x.val;
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////
   function getGuardedRecipe(x) = tpl_2(x)(fromMaybe(?, inst));
@@ -101,9 +126,9 @@ provisos (State#(state_t));
   endmodule
   zipWithM(mkRunInst, guards, map(tpl_2, allInsts));
   // general rule triggered on instruction commit
-  PulseWire w_on_inst_commit_fired <- mkPulseWire;
+  //////////////////////////////////////////////////////////////////////////////
   rule on_inst_commit (instDone);
-    w_on_inst_commit_fired.send;
+    w_on_inst_commit_fired.send; // probing
     instCommitted <= instCommitted + 1;
     inst <= tagged Invalid;
     doEpilogue[0]  <= True;
@@ -145,27 +170,8 @@ provisos (State#(state_t));
     endrule
   end
 
-  // other rules
+  // Simulation only
   //////////////////////////////////////////////////////////////////////////////
-
-  rule on_reset (isReset);
-    // fetch instruction on reset
-    reqNextInst(state);
-    // clear reseet after first cycle
-    isReset <= False;
-  endrule
-
-  // fetch next instruction on doInstFetch
-  PulseWire w_fetch_next_instr_fired <- mkPulseWire;
-  rule fetch_next_instr (!isReset && doInstFetch[1]);
-    w_fetch_next_instr_fired.send;
-    reqNextInst(state);
-    doInstFetch[1] <= False;
-    printTLogPlusArgs("BID_Core", $format("fetching next instr"));
-    printLogPlusArgs("BID_Core", "==============================================");
-  endrule
-
-  // print sim speed
   if (genC) begin
     Reg#(Bit#(64)) startTime <- mkReg(0);
     Reg#(Bit#(64)) countCycles <- mkReg(0);
