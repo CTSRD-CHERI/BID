@@ -46,8 +46,8 @@ typeclass State#(type a);
   function ActionValue#(Bit#(MaxInstSz)) getNextInst(a s);
 endtypeclass
 
-///////////////////////////////////
-// Types to harvest instructions //
+//////////////////////////////////////
+// Types to harvest ISA description //
 ////////////////////////////////////////////////////////////////////////////////
 
 `ifdef MAX_INST_SZ
@@ -59,11 +59,13 @@ typedef 32 MaxInstSz;
 typedef Tuple2#(String, function Guarded#(Recipe) f(Bit#(MaxInstSz) subject)) InstrDefn;
 typedef function Recipe f(Bit#(MaxInstSz) subject) UnkInstrDefn;
 typedef Guarded#(Recipe) EpiDefn;
+typedef Guarded#(Recipe) InterDefn;
 
 typedef union tagged {
-  InstrDefn InstDef;
-  UnkInstrDefn UnkInstDef;
-  EpiDefn EpiDef;
+  InstrDefn InstDef; // To define an the behaviour of an instruction
+  UnkInstrDefn UnkInstDef; // To define the behaviour on an unknown instruction
+  EpiDefn EpiDef; // To define a behaviour at the end of instructions
+  InterDefn InterDef; // To define a behaviour between instructions
 } ISAInstDfn;
 
 function List#(InstrDefn) getInstDef (ISAInstDfn e) =
@@ -72,15 +74,20 @@ function List#(UnkInstrDefn) getUnkInstDef (ISAInstDfn e) =
   e matches tagged UnkInstDef .x ? cons(x, Nil) : Nil;
 function List#(EpiDefn) getEpiDef (ISAInstDfn e) =
   e matches tagged EpiDef .x ? cons(x, Nil) : Nil;
+function List#(InterDefn) getInterDef (ISAInstDfn e) =
+  e matches tagged InterDef .x ? cons(x, Nil) : Nil;
 function List#(InstrDefn) getInstDefs(List#(ISAInstDfn) defs) =
   concat(map(getInstDef,defs));
 function List#(UnkInstrDefn) getUnkInstDefs(List#(ISAInstDfn) defs) =
   concat(map(getUnkInstDef,defs));
 function List#(EpiDefn) getEpiDefs(List#(ISAInstDfn) defs) =
   concat(map(getEpiDef,defs));
+function List#(InterDefn) getInterDefs(List#(ISAInstDfn) defs) =
+  concat(map(getInterDef,defs));
 
 typedef ModuleCollect#(ISAInstDfn, ifc) InstrDefModule#(type ifc);
 
+// define an InstDef
 ////////////////////////////////////////////////////////////////////////////////
 
 typeclass DefineInstr#(type a);
@@ -157,6 +164,7 @@ function List#(InstrDefn) mergeInstrDefns(List#(List#(InstrDefn)) ls);
   return foldl1(merge2,ls);
 endfunction
 
+// define an UnkInstDef
 ////////////////////////////////////////////////////////////////////////////////
 
 typeclass DefineUnkInstr#(type a);
@@ -180,6 +188,7 @@ instance DefineUnkInstr#(List#(Action));
   endmodule
 endinstance
 
+// define an EpiDef
 ////////////////////////////////////////////////////////////////////////////////
 
 typeclass DefineEpilogue#(type a);
@@ -198,6 +207,19 @@ instance DefineEpilogue#(Guarded#(Action));
   endmodule
 endinstance
 
+// define an InterDef
+////////////////////////////////////////////////////////////////////////////////
+
+typeclass DefineInterlude#(type a);
+  module [InstrDefModule] defineInterlude#(a x)();
+endtypeclass
+
+instance DefineInterlude#(Guarded#(Action));
+  module [InstrDefModule] defineInterlude#(Guarded#(Action) x)();
+    addToCollection(InterDef(Guarded { guard: x.guard, val: rAct(x.val) }));
+  endmodule
+endinstance
+
 /////////////////
 // Collections //
 ////////////////////////////////////////////////////////////////////////////////
@@ -206,6 +228,7 @@ typedef struct {
   List#(InstrDefn) instrDefs;
   UnkInstrDefn unkInstrDef;
   List#(EpiDefn) epiDefs;
+  List#(InterDefn) interDefs;
 } BIDCollections;
 
 module [Module] getCollections#(
@@ -224,6 +247,7 @@ module [Module] getCollections#(
   let instrModuleDefs = map(func, isaInstrModuleDefs);
   let unkInstrModuleDefs = map(getUnkInstDefs, isaInstrModuleDefs);
   let epiModuleDefs = map(getEpiDefs, isaInstrModuleDefs);
+  let interModuleDefs = map(getInterDefs, isaInstrModuleDefs);
   // instruction definitions
   List#(InstrDefn) instrDefs = mergeInstrDefns(instrModuleDefs);
   // unknown instruction definitions
@@ -233,11 +257,14 @@ module [Module] getCollections#(
     errorM(sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
   // flatten list of epilogues
   let epiDefs = concat(epiModuleDefs);
+  // flatten list of interludes
+  let interDefs = concat(interModuleDefs);
 
   return BIDCollections {
     instrDefs: instrDefs,
     unkInstrDef: head(unkInstrDefs),
-    epiDefs: epiDefs
+    epiDefs: epiDefs,
+    interDefs: interDefs
   };
 
 endmodule

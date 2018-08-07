@@ -259,10 +259,14 @@ module [InstrDefModule] mkExtensionISA#(ArchState s) ();
   // XXX Uncomment to get multiple in module instruction definition error
   //defineInstr("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
 
-  // this defines a guarded epilogue to happen after each instruction
+  // some counter to make some events happen
   Reg#(Bit#(16)) cnt <- mkReg(0);
   rule count; cnt <= cnt + 1; endrule
-  defineEpilogue(Guarded { guard: (cnt[1:0] == 0), val: action printTLog("!!! cnt[1:0] == 0 !!!"); endaction });
+  // this defines an epilogue to happen after each instruction when the guard is true
+  defineEpilogue(Guarded { guard: (cnt[2:0] == 3'b000), val: action printTLog("!!! An epilogue when cnt[2:0] == 3'b000 !!!"); endaction });
+
+  // this defines an interlude to happen between instructions when the guard is true
+  defineInterlude(Guarded { guard: (cnt[2:0] == 3'b100), val: action printTLog("!!! An interlude when cnt[2:0] == 3'b100 !!!"); endaction });
 
 endmodule
 

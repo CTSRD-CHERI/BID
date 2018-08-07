@@ -116,9 +116,7 @@ provisos (State#(state_t));
   List#(Bool)    instGuards = map(getGuard, grs);
   List#(Recipe) instRecipes = map(getRecipe, grs);
   let allInsts <- compile(rOneMatch(instGuards, instRecipes, cols.unkInstrDef(fromMaybe(?, inst))));
-  rule runInst (isValid(inst));
-    allInsts.start();
-  endrule
+  rule runInst (isValid(inst)); allInsts.start(); endrule
 
   // general rule triggered on instruction commit
   //////////////////////////////////////////////////////////////////////////////
@@ -133,19 +131,19 @@ provisos (State#(state_t));
 
   // run epilogue actions
   //////////////////////////////////////////////////////////////////////////////
-  if (length(cols.epiDefs) > 0) begin
-    let epilogue <- compile(rAllGuard(map(getGuard, cols.epiDefs), map(getRecipe, cols.epiDefs)));
-    rule epilogueStart(doEpilogue[1]); epilogue.start(); endrule
-    rule epilogueDone(epilogue.isLastCycle);
-      doEpilogue[1]  <= False;
-      doInstFetch[0] <= True;
-    endrule
-  end else begin
-    rule epilogue (doEpilogue[1]);
-      doEpilogue[1]  <= False;
-      doInstFetch[0] <= True;
-    endrule
-  end
+  Guarded#(Recipe) noEpilogue = Guarded {guard: True, val: rAct(noAction)};
+  List#(Guarded#(Recipe)) epilogues = cons(noEpilogue, cols.epiDefs);
+  let epilogue <- compile(rAllGuard(map(getGuard, epilogues), map(getRecipe, epilogues)));
+  rule epilogueStart(doEpilogue[1]); epilogue.start(); endrule
+  rule epilogueDone(epilogue.isLastCycle); doEpilogue[1]  <= False; endrule
+
+  // run interlude
+  //////////////////////////////////////////////////////////////////////////////
+  List#(Bool)    interludeGuards = cons(False, map(getGuard, cols.interDefs));
+  List#(Recipe) interludeRecipes = cons(rAct(noAction), map(getRecipe, cols.interDefs));
+  let allInterludes <- compile(rOneMatchDelay(interludeGuards, interludeRecipes, rAct(noAction)));
+  rule runInterlude (epilogue.isLastCycle); allInterludes.start(); endrule
+  rule interludeDone(allInterludes.isLastCycle); doInstFetch[0]  <= True; endrule
 
   // Simulation only
   //////////////////////////////////////////////////////////////////////////////
