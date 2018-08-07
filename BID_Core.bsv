@@ -113,51 +113,28 @@ provisos (State#(state_t));
   //////////////////////////////////////////////////////////////////////////////
   function getGuardedRecipe(x) = tpl_2(x)(fromMaybe(?, inst));
   List#(Guarded#(Recipe)) grs = map(getGuardedRecipe, cols.instrDefs);
-  List#(Bool) guards = map(getGuard, grs);
-  Bool isUnkInst = ! any(id, guards);
-  List#(Tuple2#(Rules, RecipeFSM)) allInsts <- mapM(compileRules, map(getRecipe, grs));
-  module mkRunInst#(Bool g, RecipeFSM m) ();
-    rule runInst (g && isValid(inst));
-      m.start();
-    endrule
-    rule pulseInstDone (m.isLastCycle);
-      instDone.send();
-    endrule
-  endmodule
-  zipWithM(mkRunInst, guards, map(tpl_2, allInsts));
+  List#(Bool)    instGuards = map(getGuard, grs);
+  List#(Recipe) instRecipes = map(getRecipe, grs);
+  let allInsts <- compile(rOneMatch(instGuards, instRecipes, cols.unkInstrDef(fromMaybe(?, inst))));
+  rule runInst (isValid(inst));
+    allInsts.start();
+  endrule
+
   // general rule triggered on instruction commit
   //////////////////////////////////////////////////////////////////////////////
-  rule on_inst_commit (instDone);
+  rule on_inst_commit (allInsts.isLastCycle);
     w_on_inst_commit_fired.send; // probing
-    instCommitted <= instCommitted + 1;
+    instCommitted <= instCommitted + 1; // TODO not count for unknown inst !!! XXX
     inst <= tagged Invalid;
     doEpilogue[0]  <= True;
     printTLogPlusArgs("BID_Core", $format("Committing instruction rule"));
     printLogPlusArgs("BID_Core", "==============================================");
   endrule
 
-  // generate rules for unknown instruction
-  //////////////////////////////////////////////////////////////////////////////
-  Tuple2#(Rules, RecipeFSM) unkInst <- compileRules(cols.unkInstrDef(fromMaybe(?, inst)));
-  module mkRunUnkInst#(Bool g, RecipeFSM m) ();
-    rule runUnkInst (g);
-      m.start();
-    endrule
-    rule unkInstDone (m.isLastCycle);
-      inst <= tagged Invalid;
-      doEpilogue[0]  <= True;
-    endrule
-  endmodule
-  mkRunUnkInst(!isReset && isValid(inst) && isUnkInst, tpl_2(unkInst));
-
-  // Add all compiled instruction rules
-  //////////////////////////////////////////////////////////////////////////////
-  addRules(fold(rJoinMutuallyExclusive, cons(tpl_1(unkInst), map(tpl_1, allInsts))));
-
   // run epilogue actions
   //////////////////////////////////////////////////////////////////////////////
   if (length(cols.epiDefs) > 0) begin
-    let epilogue <- compile(rPar(zipWith(rWhen, map(getGuard, cols.epiDefs), map(getRecipe, cols.epiDefs))));
+    let epilogue <- compile(rAllGuard(map(getGuard, cols.epiDefs), map(getRecipe, cols.epiDefs)));
     rule epilogueStart(doEpilogue[1]); epilogue.start(); endrule
     rule epilogueDone(epilogue.isLastCycle);
       doEpilogue[1]  <= False;
