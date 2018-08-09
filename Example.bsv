@@ -31,6 +31,7 @@ import ClientServer :: *;
 import GetPut :: *;
 
 import BitPat :: *;
+import BlueBasics :: *;
 import BlueUtils :: *;
 import BID :: *;
 
