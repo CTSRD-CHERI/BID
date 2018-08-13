@@ -61,6 +61,8 @@ provisos (State#(state_t));
   // local signals and registers
   PulseWire instDone <- mkPulseWireOR;
   Reg#(Bool) doInstFetch[2] <- mkCReg(2, False);
+  Reg#(Bool) doPrologue[2]  <- mkCReg(2, False);
+  Reg#(Bool) doInst[2]      <- mkCReg(2, False);
   Reg#(Bool) doEpilogue[2]  <- mkCReg(2, False);
   Reg#(Bool) isReset <- mkReg(True);
   Reg#(Bit#(64)) instCommitted <- mkReg(0);
@@ -103,11 +105,20 @@ provisos (State#(state_t));
     w_peek_imem_fired.send; // probing
     Bit#(MaxInstSz) rsp <- getNextInst(state);
     latchedInst[0] <= tagged Valid rsp;
+    doPrologue[0] <= True;
     printTLogPlusArgs("BID_Core", $format("received instruction response: ", fshow(rsp)));
   endrule
   rule debug_current_inst;
     printTLogPlusArgs("BID_Core", $format("current instructions: ", fshow(inst)));
   endrule
+
+  // run prologue actions
+  //////////////////////////////////////////////////////////////////////////////
+  Guarded#(Recipe) noPrologue = Guarded {guard: True, val: rAct(noAction)};
+  List#(Guarded#(Recipe)) prologues = cons(noPrologue, cols.proDefs);
+  let prologue <- compile(rAllGuard(map(getGuard, prologues), map(getRecipe, prologues)));
+  rule prologueStart(doPrologue[1]); prologue.start(); endrule
+  rule prologueDone(prologue.isLastCycle); doPrologue[1] <= False; doInst[0] <= True; endrule
 
   // generate rules for instruction execution
   //////////////////////////////////////////////////////////////////////////////
@@ -116,7 +127,7 @@ provisos (State#(state_t));
   List#(Bool)    instGuards = map(getGuard, grs);
   List#(Recipe) instRecipes = map(getRecipe, grs);
   let allInsts <- compile(rOneMatch(instGuards, instRecipes, cols.unkInstrDef(fromMaybe(?, inst))));
-  rule runInst (isValid(inst)); allInsts.start(); endrule
+  rule runInst (doInst[1] && isValid(inst)); allInsts.start(); endrule
 
   // general rule triggered on instruction commit
   //////////////////////////////////////////////////////////////////////////////
@@ -124,7 +135,8 @@ provisos (State#(state_t));
     w_on_inst_commit_fired.send; // probing
     instCommitted <= instCommitted + 1; // TODO not count for unknown inst !!! XXX
     inst <= tagged Invalid;
-    doEpilogue[0]  <= True;
+    doInst[1] <= False;
+    doEpilogue[0] <= True;
     printTLogPlusArgs("BID_Core", $format("Committing instruction rule"));
     printLogPlusArgs("BID_Core", "==============================================");
   endrule

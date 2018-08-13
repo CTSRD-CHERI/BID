@@ -263,6 +263,10 @@ module [InstrDefModule] mkExtensionISA#(ArchState s) ();
   // some counter to make some events happen
   Reg#(Bit#(16)) cnt <- mkReg(0);
   rule count; cnt <= cnt + 1; endrule
+
+  // this defines a prologue to happen before each instruction when the guard is true
+  definePrologue(Guarded { guard: (cnt[2:0] == 3'b000), val: action printTLog("!!! A prologue when cnt[2:0] == 3'b000 !!!"); endaction });
+
   // this defines an epilogue to happen after each instruction when the guard is true
   defineEpilogue(Guarded { guard: (cnt[2:0] == 3'b000), val: action printTLog("!!! An epilogue when cnt[2:0] == 3'b000 !!!"); endaction });
 

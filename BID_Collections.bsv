@@ -58,36 +58,35 @@ typedef 32 MaxInstSz;
 
 typedef Tuple2#(String, function Guarded#(Recipe) f(Bit#(MaxInstSz) subject)) InstrDefn;
 typedef function Recipe f(Bit#(MaxInstSz) subject) UnkInstrDefn;
+typedef Guarded#(Recipe) ProDefn;
 typedef Guarded#(Recipe) EpiDefn;
 typedef Guarded#(Recipe) InterDefn;
 
 typedef union tagged {
-  InstrDefn InstDef; // To define an the behaviour of an instruction
-  UnkInstrDefn UnkInstDef; // To define the behaviour on an unknown instruction
+  InstrDefn InstrDef; // To define an the behaviour of an instruction
+  UnkInstrDefn UnkInstrDef; // To define the behaviour on an unknown instruction
+  ProDefn ProDef; // To define a behaviour at the beginning of instructions
   EpiDefn EpiDef; // To define a behaviour at the end of instructions
   InterDefn InterDef; // To define a behaviour between instructions
 } ISAInstDfn;
 
-function List#(InstrDefn) getInstDef (ISAInstDfn e) =
-  e matches tagged InstDef .x ? cons(x, Nil) : Nil;
-function List#(UnkInstrDefn) getUnkInstDef (ISAInstDfn e) =
-  e matches tagged UnkInstDef .x ? cons(x, Nil) : Nil;
-function List#(EpiDefn) getEpiDef (ISAInstDfn e) =
-  e matches tagged EpiDef .x ? cons(x, Nil) : Nil;
-function List#(InterDefn) getInterDef (ISAInstDfn e) =
-  e matches tagged InterDef .x ? cons(x, Nil) : Nil;
-function List#(InstrDefn) getInstDefs(List#(ISAInstDfn) defs) =
-  concat(map(getInstDef,defs));
-function List#(UnkInstrDefn) getUnkInstDefs(List#(ISAInstDfn) defs) =
-  concat(map(getUnkInstDef,defs));
-function List#(EpiDefn) getEpiDefs(List#(ISAInstDfn) defs) =
-  concat(map(getEpiDef,defs));
-function List#(InterDefn) getInterDefs(List#(ISAInstDfn) defs) =
-  concat(map(getInterDef,defs));
+`define defGet(n)\
+function List#(``n``Defn) get``n``Def (ISAInstDfn e) =\
+  e matches tagged n``Def .x ? cons(x, Nil) : Nil;\
+function List#(``n``Defn) get``n``Defs(List#(ISAInstDfn) defs) =\
+  concat(map(get``n``Def,defs));
+
+`defGet(Instr)
+`defGet(UnkInstr)
+`defGet(Pro)
+`defGet(Epi)
+`defGet(Inter)
+
+`undef defGet
 
 typedef ModuleCollect#(ISAInstDfn, ifc) InstrDefModule#(type ifc);
 
-// define an InstDef
+// define an InstrDef
 ////////////////////////////////////////////////////////////////////////////////
 
 typeclass DefineInstr#(type a);
@@ -104,7 +103,7 @@ instance DefineInstr#(Action);
       Tuple2#(GCol#(Bit#(0)), Action) res = p(subject, f);
       return Guarded { guard: tpl_1(res).guard, val: rAct(tpl_2(res)) };
     endfunction
-    addToCollection(InstDef(tuple2(name,flipPat)));
+    addToCollection(InstrDef(tuple2(name,flipPat)));
   endmodule
 endinstance
 
@@ -115,7 +114,7 @@ instance DefineInstr#(List#(Action));
       Tuple2#(GCol#(Bit#(0)), List#(Action)) res = p(truncate(x), f);
       return Guarded { guard: tpl_1(res).guard, val: rPar(map(rAct, tpl_2(res))) };
     endfunction
-    addToCollection(InstDef(tuple2(name, flipPat)));
+    addToCollection(InstrDef(tuple2(name, flipPat)));
   endmodule
 endinstance
 
@@ -126,7 +125,7 @@ instance DefineInstr#(Recipe);
       Tuple2#(GCol#(Bit#(0)), Recipe) res = p(truncate(x), f);
       return Guarded { guard: tpl_1(res).guard, val: tpl_2(res) };
     endfunction
-    addToCollection(InstDef(tuple2(name, flipPat)));
+    addToCollection(InstrDef(tuple2(name, flipPat)));
   endmodule
 endinstance
 
@@ -164,7 +163,7 @@ function List#(InstrDefn) mergeInstrDefns(List#(List#(InstrDefn)) ls);
   return foldl1(merge2,ls);
 endfunction
 
-// define an UnkInstDef
+// define an UnkInstrDef
 ////////////////////////////////////////////////////////////////////////////////
 
 typeclass DefineUnkInstr#(type a);
@@ -176,7 +175,7 @@ instance DefineUnkInstr#(Action);
   module [InstrDefModule] defineUnkInstr#(function Action f(Bit#(n) s))()
   provisos (Add#(a__, n, MaxInstSz));
     function Recipe applyFunc(Bit#(MaxInstSz) x) = rAct(f(truncate(x)));
-    addToCollection(UnkInstDef(applyFunc));
+    addToCollection(UnkInstrDef(applyFunc));
   endmodule
 endinstance
 
@@ -184,41 +183,33 @@ instance DefineUnkInstr#(List#(Action));
   module [InstrDefModule] defineUnkInstr#(function List#(Action) f(Bit#(n) s))()
   provisos (Add#(a__, n, MaxInstSz));
     function Recipe applyFunc(Bit#(MaxInstSz) x) = rPar(map(rAct, f(truncate(x))));
-    addToCollection(UnkInstDef(applyFunc));
+    addToCollection(UnkInstrDef(applyFunc));
   endmodule
 endinstance
 
-// define an EpiDef
+// define an prologue/epilogue/interlude
 ////////////////////////////////////////////////////////////////////////////////
 
-typeclass DefineEpilogue#(type a);
-  module [InstrDefModule] defineEpilogue#(a x)();
-endtypeclass
-
-instance DefineEpilogue#(Action);
-  module [InstrDefModule] defineEpilogue#(Action x)();
-    addToCollection(EpiDef(Guarded { guard: True, val: rAct(x) }));
-  endmodule
+`define defGuardedRecipe(methodname, consname)\
+typeclass Class_``methodname``#(type a);\
+  module [InstrDefModule] methodname``#(a x)();\
+endtypeclass\
+instance Class_``methodname``#(Action);\
+  module [InstrDefModule] methodname``#(Action x)();\
+    addToCollection(``consname``Def(Guarded { guard: True, val: rAct(x) }));\
+  endmodule\
+endinstance\
+instance Class_``methodname``#(Guarded#(Action));\
+  module [InstrDefModule] methodname``#(Guarded#(Action) x)();\
+    addToCollection(``consname``Def(Guarded { guard: x.guard, val: rAct(x.val) }));\
+  endmodule\
 endinstance
 
-instance DefineEpilogue#(Guarded#(Action));
-  module [InstrDefModule] defineEpilogue#(Guarded#(Action) x)();
-    addToCollection(EpiDef(Guarded { guard: x.guard, val: rAct(x.val) }));
-  endmodule
-endinstance
+`defGuardedRecipe(definePrologue, Pro)
+`defGuardedRecipe(defineEpilogue, Epi)
+`defGuardedRecipe(defineInterlude, Inter)
 
-// define an InterDef
-////////////////////////////////////////////////////////////////////////////////
-
-typeclass DefineInterlude#(type a);
-  module [InstrDefModule] defineInterlude#(a x)();
-endtypeclass
-
-instance DefineInterlude#(Guarded#(Action));
-  module [InstrDefModule] defineInterlude#(Guarded#(Action) x)();
-    addToCollection(InterDef(Guarded { guard: x.guard, val: rAct(x.val) }));
-  endmodule
-endinstance
+`undef defGuardedRecipe
 
 /////////////////
 // Collections //
@@ -227,6 +218,7 @@ endinstance
 typedef struct {
   List#(InstrDefn) instrDefs;
   UnkInstrDefn unkInstrDef;
+  List#(ProDefn) proDefs;
   List#(EpiDefn) epiDefs;
   List#(InterDefn) interDefs;
 } BIDCollections;
@@ -243,9 +235,10 @@ module [Module] getCollections#(
   function List#(a) getItems (IWithCollection#(a,i) c) = c.collection();
   List#(List#(ISAInstDfn)) isaInstrModuleDefs = map(getItems, cs);
   // split definitions per type
-  let func = compose(checkInstrDefns,compose(sortBy(cmpInstrDefn),getInstDefs));
+  let func = compose(checkInstrDefns,compose(sortBy(cmpInstrDefn),getInstrDefs));
   let instrModuleDefs = map(func, isaInstrModuleDefs);
-  let unkInstrModuleDefs = map(getUnkInstDefs, isaInstrModuleDefs);
+  let unkInstrModuleDefs = map(getUnkInstrDefs, isaInstrModuleDefs);
+  let proModuleDefs = map(getProDefs, isaInstrModuleDefs);
   let epiModuleDefs = map(getEpiDefs, isaInstrModuleDefs);
   let interModuleDefs = map(getInterDefs, isaInstrModuleDefs);
   // instruction definitions
@@ -255,6 +248,8 @@ module [Module] getCollections#(
   let unkInstrDefsLen = length(unkInstrDefs);
   if (unkInstrDefsLen != 1)
     errorM(sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
+  // flatten list of prologues
+  let proDefs = concat(proModuleDefs);
   // flatten list of epilogues
   let epiDefs = concat(epiModuleDefs);
   // flatten list of interludes
@@ -263,6 +258,7 @@ module [Module] getCollections#(
   return BIDCollections {
     instrDefs: instrDefs,
     unkInstrDef: head(unkInstrDefs),
+    proDefs: proDefs,
     epiDefs: epiDefs,
     interDefs: interDefs
   };
