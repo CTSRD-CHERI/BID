@@ -37,21 +37,33 @@ import BitPat :: *;
 import BID_Collections :: *;
 import BlueUtils :: *;
 
+//////////////////////////
+// terminate simulation //
+//////////////////////////
+
+function Action terminateSim(s state, Fmt msg) provisos (State#(s)) = action
+  $display("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+  $display("time %0t -- Simulation terminated", $time);
+  $display(msg);
+  $display("----------------------------------------");
+  $display(fullReport(state));
+  $display("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+  $finish(0);
+endaction;
+
+//////////////////////////
+// ISA simulator engine //
+////////////////////////////////////////////////////////////////////////////////
+
 interface BIDProbes;
   method Bool latchedInst0Valid;
   method Bit#(MaxInstSz) latchedInst0;
   method Bool latchedInst1Valid;
   method Bit#(MaxInstSz) latchedInst1;
-  method Bool doInstFetch0;
-  method Bool doInstFetch1;
   method Bool peek_imem_fired;
   method Bool on_inst_commit_fired;
   method Bool fetch_next_instr_fired;
 endinterface
-
-//////////////////////////
-// ISA simulator engine //
-////////////////////////////////////////////////////////////////////////////////
 
 module [Module] mkISASim#(
   state_t state, List#(function InstrDefModule#(ifc) mkMod (state_t st)) ms)
@@ -59,17 +71,13 @@ module [Module] mkISASim#(
 provisos (State#(state_t));
 
   // local signals and registers
-  PulseWire instDone <- mkPulseWireOR;
-  Reg#(Bool) doInstFetch[2] <- mkCReg(2, False);
-  Reg#(Bool) doPrologue[2]  <- mkCReg(2, False);
-  Reg#(Bool) doInst[2]      <- mkCReg(2, False);
-  Reg#(Bool) doEpilogue[2]  <- mkCReg(2, False);
-  Reg#(Bool) isReset <- mkReg(True);
-  Reg#(Bit#(64)) instCommitted <- mkReg(0);
   Reg#(Maybe#(Bit#(MaxInstSz))) latchedInst[2] <- mkCReg(2, tagged Invalid);
   Reg#(Maybe#(Bit#(MaxInstSz))) inst = latchedInst[1];
+  Reg#(Bit#(64)) instCommitted <- mkReg(0);
+  Reg#(Bool) isReset <- mkReg(True);
 
   // harvest collections
+  //////////////////////////////////////////////////////////////////////////////
   BIDCollections cols <- getCollections(state, ms);
   function Bool getGuard(Guarded#(Recipe) x) = x.guard;
   function Recipe getRecipe(Guarded#(Recipe) x) = x.val;
@@ -79,83 +87,68 @@ provisos (State#(state_t));
   PulseWire w_on_inst_commit_fired <- mkPulseWire;
   PulseWire w_fetch_next_instr_fired <- mkPulseWire;
 
-  // reset rule
+  // Peek at next instruction from imem (to be ran as a prologue)
   //////////////////////////////////////////////////////////////////////////////
-
-  rule on_reset (isReset);
-    // fetch instruction on reset
-    reqNextInst(state);
-    // clear reseet after first cycle
-    isReset <= False;
-  endrule
-
-  // instruction fetch rule
-  //////////////////////////////////////////////////////////////////////////////
-  rule fetch_next_instr (!isReset && doInstFetch[1]);
-    w_fetch_next_instr_fired.send; // probing
-    reqNextInst(state);
-    doInstFetch[1] <= False;
-    printTLogPlusArgs("BID_Core", $format("fetching next instr"));
-    printLogPlusArgs("BID_Core", "==============================================");
-  endrule
-
-  // Peek at next instruction from imem
-  //////////////////////////////////////////////////////////////////////////////
-  rule peek_imem;
+  Recipe iPeekRecipe = rAct(action
     w_peek_imem_fired.send; // probing
     Bit#(MaxInstSz) rsp <- getNextInst(state);
     latchedInst[0] <= tagged Valid rsp;
-    doPrologue[0] <= True;
     printTLogPlusArgs("BID_Core", $format("received instruction response: ", fshow(rsp)));
-  endrule
+  endaction);
   rule debug_current_inst;
     printTLogPlusArgs("BID_Core", $format("current instructions: ", fshow(inst)));
   endrule
 
-  // run prologue actions
+  // Prologue recipes
   //////////////////////////////////////////////////////////////////////////////
-  Guarded#(Recipe) noPrologue = Guarded {guard: True, val: rAct(noAction)};
-  List#(Guarded#(Recipe)) prologues = cons(noPrologue, cols.proDefs);
-  let prologue <- compile(rAllGuard(map(getGuard, prologues), map(getRecipe, prologues)));
-  rule prologueStart(doPrologue[1]); prologue.start(); endrule
-  rule prologueDone(prologue.isLastCycle); doPrologue[1] <= False; doInst[0] <= True; endrule
+  List#(Guarded#(Recipe)) prologues =
+    cons(Guarded {guard: True, val: iPeekRecipe}, cols.proDefs);
+  Recipe prologueRecipe =
+    rAllGuard(map(getGuard, prologues), map(getRecipe, prologues));
 
-  // generate rules for instruction execution
+  // Instruction execution recipes
   //////////////////////////////////////////////////////////////////////////////
   function getGuardedRecipe(x) = tpl_2(x)(fromMaybe(?, inst));
   List#(Guarded#(Recipe)) grs = map(getGuardedRecipe, cols.instrDefs);
-  List#(Bool)    instGuards = map(getGuard, grs);
-  List#(Recipe) instRecipes = map(getRecipe, grs);
-  let allInsts <- compile(rOneMatch(instGuards, instRecipes, cols.unkInstrDef(fromMaybe(?, inst))));
-  rule runInst (doInst[1] && isValid(inst)); allInsts.start(); endrule
+  function protectGuard(g) = isValid(inst) && g;
+  Recipe instrRecipe = rOneMatch(
+    map(protectGuard, map(getGuard, grs)),
+    map(getRecipe, grs),
+    cols.unkInstrDef(fromMaybe(?, inst))
+  );
 
-  // general rule triggered on instruction commit
+  // Instruction commit recipe (to be ran as an epilogue)
   //////////////////////////////////////////////////////////////////////////////
-  rule on_inst_commit (allInsts.isLastCycle);
+  Recipe instrCommitRecipe = rAct(action
     w_on_inst_commit_fired.send; // probing
     instCommitted <= instCommitted + 1; // TODO not count for unknown inst !!! XXX
     inst <= tagged Invalid;
-    doInst[1] <= False;
-    doEpilogue[0] <= True;
-    printTLogPlusArgs("BID_Core", $format("Committing instruction rule"));
+    printTLogPlusArgs("BID_Core", $format(">>> Instruction commit <<<"));
+  endaction);
+
+  // Epilogue recipes
+  //////////////////////////////////////////////////////////////////////////////
+  List#(Guarded#(Recipe)) epilogues =
+    cons(Guarded {guard: True, val: instrCommitRecipe}, cols.epiDefs);
+  Recipe epilogueRecipe =
+    rAllGuard(map(getGuard, epilogues), map(getRecipe, epilogues));
+
+  // Interlude recipes
+  //////////////////////////////////////////////////////////////////////////////
+  Recipe interludeRecipe = rOneMatchDelay(
+    cons(False, map(getGuard, cols.interDefs)),
+    cons(rAct(noAction), map(getRecipe, cols.interDefs)),
+    rAct(noAction)
+  );
+
+  // Instruction fetch recipe
+  //////////////////////////////////////////////////////////////////////////////
+  Recipe iFetchRecipe = rAct(action
+    w_fetch_next_instr_fired.send; // probing
+    reqNextInst(state);
+    printTLogPlusArgs("BID_Core", $format("fetching next instr"));
     printLogPlusArgs("BID_Core", "==============================================");
-  endrule
-
-  // run epilogue actions
-  //////////////////////////////////////////////////////////////////////////////
-  Guarded#(Recipe) noEpilogue = Guarded {guard: True, val: rAct(noAction)};
-  List#(Guarded#(Recipe)) epilogues = cons(noEpilogue, cols.epiDefs);
-  let epilogue <- compile(rAllGuard(map(getGuard, epilogues), map(getRecipe, epilogues)));
-  rule epilogueStart(doEpilogue[1]); epilogue.start(); endrule
-  rule epilogueDone(epilogue.isLastCycle); doEpilogue[1]  <= False; endrule
-
-  // run interlude
-  //////////////////////////////////////////////////////////////////////////////
-  List#(Bool)    interludeGuards = cons(False, map(getGuard, cols.interDefs));
-  List#(Recipe) interludeRecipes = cons(rAct(noAction), map(getRecipe, cols.interDefs));
-  let allInterludes <- compile(rOneMatchDelay(interludeGuards, interludeRecipes, rAct(noAction)));
-  rule runInterlude (epilogue.isLastCycle); allInterludes.start(); endrule
-  rule interludeDone(allInterludes.isLastCycle); doInstFetch[0]  <= True; endrule
+  endaction);
 
   // Simulation only
   //////////////////////////////////////////////////////////////////////////////
@@ -179,13 +172,33 @@ provisos (State#(state_t));
     endrule
   end
 
+  // Build main loop and compile recipe
+  //////////////////////////////////////////////////////////////////////////////
+  let machine <- compile(rSeq(rBlock(
+    rAct(action
+      // fetch instruction on reset
+      reqNextInst(state);
+      // clear reseet after first cycle
+      isReset <= False;
+    endaction),
+    rWhile(True, rFastSeq(rBlock(
+      prologueRecipe,
+      instrRecipe,
+      epilogueRecipe,
+      interludeRecipe,
+      iFetchRecipe
+    ))),
+    rAct(action
+      terminateSim(state, $format("reached the end of the recipe"));
+    endaction)
+  )));
+  rule startMachine(isReset); machine.start(); endrule
+
   // populate probes
   method latchedInst0 = fromMaybe(?,latchedInst[0]);
   method latchedInst0Valid = isValid(latchedInst[0]);
   method latchedInst1 = fromMaybe(?,latchedInst[1]);
   method latchedInst1Valid = isValid(latchedInst[1]);
-  method doInstFetch0 = doInstFetch[0];
-  method doInstFetch1 = doInstFetch[1];
   method peek_imem_fired = w_peek_imem_fired;
   method on_inst_commit_fired = w_on_inst_commit_fired;
   method fetch_next_instr_fired = w_fetch_next_instr_fired;

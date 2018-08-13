@@ -34,20 +34,4 @@ import BID_Collections :: *;
 export BID_Core :: *;
 export BID_Collections :: *;
 
-export BID :: *;
-
-//////////////////////////
-// terminate simulation //
-//////////////////////////
-
-function Action terminateSim(s state, Fmt msg) provisos (State#(s)) = action
-  $display("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
-  $display("time %0t -- Simulation terminated", $time);
-  $display(msg);
-  $display("----------------------------------------");
-  $display(fullReport(state));
-  $display("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
-  $finish(0);
-endaction;
-
 endpackage
