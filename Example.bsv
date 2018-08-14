@@ -114,22 +114,6 @@ instance State#(ArchState);
 
 endinstance
 
-// Example of an epilogue helper function that can be invoked at the end of
-// an instruction's semantic function.
-function Action pcEpilogue(ArchState s) = action
-  printTLog("--------------- epilogue --------------");
-  Bit#(32) tmpPC = s.pc + s.instByteSz;
-  s.pc <= tmpPC;
-  s.instCnt <= s.instCnt + 1;
-  printTLog($format("s.pc <= 0x%0x", tmpPC));
-endaction;
-
-// Example of an epilogue helper that can be invoked after each instruction.
-Action alwaysEpilogue = action
-  printTLog("--------------- always epilogue --------------");
-  printTLog($format("always happening"));
-endaction;
-
 ////////////////////////////
 // Define instruction set //
 ////////////////////////////////////////////////////////////////////////////////
@@ -138,46 +122,47 @@ endaction;
 // toplevel functions, explicitly receiving the architectural state, and
 // returning a single Action.
 function Action instrADD(ArchState s, Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
-  printTLog($format("add %0d, %0d, %0d", rd, rs1, rs2));
-  printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + s.regfile[rs2]));
   s.regfile[rd] <= s.regfile[rs1] + s.regfile[rs2];
-  pcEpilogue(s);
+  printTLogPlusArgs("itrace", $format("add %0d, %0d, %0d", rd, rs1, rs2));
+  printTLogPlusArgs("itrace", $format("regfile[%0d] <= 0x%0x", rd, s.regfile[rs1] + s.regfile[rs2]));
 endaction;
 
 function Action instrADDI(ArchState s, Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) = action
-  printTLog($format("addi %0d, %0d, %0d", rd, rs1, imm));
-  printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + signExtend(imm)));
   s.regfile[rd] <= s.regfile[rs1] + signExtend(imm);
-  pcEpilogue(s);
+  printTLogPlusArgs("itrace", $format("addi %0d, %0d, 0x%0x", rd, rs1, imm));
+  printTLogPlusArgs("itrace", $format("regfile[%0d] <= 0x%0x", rd, s.regfile[rs1] + signExtend(imm)));
 endaction;
 
 function Action instrJAL(ArchState s, Bit#(1) imm20, Bit#(10) imm10_1, Bit#(1) imm11, Bit#(8) imm19_12, Bit#(5) rd) = action
   Bit#(32) imm = {signExtend(imm20),imm19_12,imm11,imm10_1,1'b0};
   s.pc <= s.pc + imm;
   s.regfile[rd] <= s.pc + s.instByteSz;
-  printTLog($format("jal %0d, %0d", rd, imm));
+  printTLogPlusArgs("itrace", $format("jal %0d, 0x%0x", rd, imm));
 endaction;
 
 function Action instrBEQ (ArchState s, Bit#(1) imm12, Bit#(6) imm10_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(4) imm4_1, Bit#(1) imm11) = action
   Bit#(32) imm = {signExtend(imm12),imm11,imm10_5,imm4_1,1'b0};
-  if (s.regfile[rs1] == s.regfile[rs2]) s.pc <= s.pc + imm;
-  else s.pc <= s.pc + s.instByteSz;
-  printTLog($format("beq", rs1, rs2, imm));
+  String taken = "not taken";
+  if (s.regfile[rs1] == s.regfile[rs2]) begin
+    s.pc <= s.pc + imm;
+    taken = "taken";
+  end
+  printTLogPlusArgs("itrace", $format("beq %0d, %0d, 0x%0x -- %s", rs1, rs2, imm, taken));
+  //TODO no pcEpilogue
 endaction;
 
 // A load byte instruction returning a List#(Action) to express interraction
 // with a module with potential latency (the memory).
 function List#(Action) instrLB(ArchState s, Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) = list(
   action
-    printTLog($format("lb %0d, %0d, %0d - step 1", rd, rs1, imm));
     Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
     s.dmem.request.put(tagged ReadReq {addr: addr, numBytes: 1});
+    printTLogPlusArgs("itrace", $format("lb %0d, %0d, 0x%0x - step 1", rd, rs1, imm));
   endaction,
   action
-    printTLog($format("lb %0d, %0d, %0d - step 2", rd, rs1, imm));
     let rsp <- s.dmem.response.get();
     case (rsp) matches tagged ReadRsp .r: s.regfile[rd] <= r; endcase
-    pcEpilogue(s);
+    printTLogPlusArgs("itrace", $format("lb %0d, %0d, 0x%0x - step 2", rd, rs1, imm));
   endaction
 );
 
@@ -185,24 +170,19 @@ function Action instrSB(ArchState s, Bit#(7) imm11_5, Bit#(5) rs2, Bit#(5) rs1, 
   Bit#(32) imm = {signExtend(imm11_5), imm4_0};
   Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
   s.dmem.request.put(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile[rs2]});
-  printTLog($format("sb %0d, %0d, %0d", rs1, rs2, imm));
-  pcEpilogue(s);
+  printTLogPlusArgs("itrace", $format("sb %0d, %0d, 0x%0x", rs1, rs2, imm));
 endaction;
 
 // An example of a compressed instruction. See the pattern definition for details.
 function Action instrC_LI(ArchState s, Bit#(1) imm_5, Bit#(5) rd, Bit#(5) imm4_0) = action
   s.regfile[rd] <= signExtend({imm_5, imm4_0});
-  printTLog($format("c.li %0d, %0d", rd, {imm_5, imm4_0}));
-  s.pc <= s.pc + s.instByteSz;
+  printTLogPlusArgs("itrace", $format("c.li %0d, 0x%0x", rd, {imm_5, imm4_0}));
 endaction;
 
 // The unknown instruction, to be executed when no other instruction matched.
 function List#(Action) unkInst(ArchState s, Bit#(MaxInstSz) inst) = list(
-  action
-    printTLog($format("Unknown instruction 0x%0x", inst));
-    pcEpilogue(s);
-  endaction,
-  printTLog($format("bye"))
+  printTLogPlusArgs("itrace", $format("Unknown instruction 0x%0x", inst)),
+  printTLog($format("UNKNOWN INSTRUCTION 0x%0x", inst))
 );
 
 // Define a BID InstrDefModule module to enable the use of defineInstr and
@@ -234,8 +214,15 @@ module [InstrDefModule] mkBaseISA#(ArchState s) ();
   defineUnkInstr(unkInst(s));
   // XXX Uncomment to get multiple unknown instruction definition error.
   //defineUnkInstr(unkInst);
-  // this defines an epilogue to happen after each instruction
-  defineEpilogue(alwaysEpilogue);
+
+  // Prologue to prepare Next PC
+  definePrologue(action asReg(s.pc.next) <= s.pc + s.instByteSz; endaction);
+
+  // Epilogue happening after each instruction.
+  defineEpilogue(action
+    s.instCnt <= s.instCnt + 1;
+    printTLogPlusArgs("itrace", "--------------- epilogue --------------");
+  endaction);
 
 endmodule
 
@@ -248,10 +235,9 @@ module [InstrDefModule] mkExtensionISA#(ArchState s) ();
   // The previous style (explicit state argument of a toplevel function) is
   // prefered if the semantic function is to be imported in other BSV files.
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
-    printTLog($format("EXTENDED add %0d, %0d, %0d", rd, rs1, rs2));
-    printTLog($format("regfile[%0d] <= %0d", rd, s.regfile[rs1] + s.regfile[rs2]));
     s.regfile[rd] <= s.regfile[rs1] + s.regfile[rs2];
-    pcEpilogue(s);
+    printTLogPlusArgs("itrace", $format("add %0d, %0d, %0d -- EXTENDED", rd, rs1, rs2));
+    printTLogPlusArgs("itrace", $format("regfile[%0d] <= 0x%0x", rd, s.regfile[rs1] + s.regfile[rs2]));
   endaction;
   // The use of the same string "add" as in the mkBaseISA will cause
   // overwriting of the previous declaration.

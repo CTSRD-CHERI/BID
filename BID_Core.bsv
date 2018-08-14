@@ -87,7 +87,7 @@ provisos (State#(state_t));
   PulseWire w_on_inst_commit_fired <- mkPulseWire;
   PulseWire w_fetch_next_instr_fired <- mkPulseWire;
 
-  // Peek at next instruction from imem (to be ran as a prologue)
+  // Peek at next instruction from imem (to be ran before the prologues)
   //////////////////////////////////////////////////////////////////////////////
   Recipe iPeekRecipe = rAct(action
     w_peek_imem_fired.send; // probing
@@ -102,7 +102,7 @@ provisos (State#(state_t));
   // Prologue recipes
   //////////////////////////////////////////////////////////////////////////////
   List#(Guarded#(Recipe)) prologues =
-    cons(Guarded {guard: True, val: iPeekRecipe}, cols.proDefs);
+    cons(Guarded {guard: False, val: rAct(noAction)}, cols.proDefs);
   Recipe prologueRecipe =
     rAllGuard(map(getGuard, prologues), map(getRecipe, prologues));
 
@@ -182,6 +182,7 @@ provisos (State#(state_t));
       isReset <= False;
     endaction),
     rWhile(True, rFastSeq(rBlock(
+      iPeekRecipe,
       prologueRecipe,
       instrRecipe,
       epilogueRecipe,
