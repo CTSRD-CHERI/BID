@@ -137,7 +137,7 @@ provisos (State#(state_t));
   //////////////////////////////////////////////////////////////////////////////
   Recipe interludeRecipe = rOneMatchDelay(
     cons(False, map(getGuard, cols.interDefs)),
-    cons(rAct(noAction), map(getRecipe, cols.interDefs)),
+    cons(rAct(noAction), map(rTag("interlude"), map(getRecipe, cols.interDefs))),
     rAct(noAction)
   );
 

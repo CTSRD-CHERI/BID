@@ -56,6 +56,8 @@ typedef struct {
   Mem#(Bit#(32), Bit#(32)) dmem;
   // interface to instruction memory
   Mem#(Bit#(32), Bit#(32)) imem;
+  // somme conflicting resource between normal flow and interlude
+  Reg#(Bit#(32)) dummy;
 } ArchState;
 
 // ArchState initialization module
@@ -76,6 +78,7 @@ module mkState (ArchState);
   Mem2#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkSharedMem2(4096, "test-prog.hex");
   s.dmem = mem.p0;
   s.imem = mem.p1;
+  s.dummy <- mkRegU;
   return s;
 endmodule
 
@@ -218,11 +221,29 @@ module [InstrDefModule] mkBaseISA#(ArchState s) ();
   // Prologue to prepare Next PC
   definePrologue(action asReg(s.pc.next) <= s.pc + s.instByteSz; endaction);
 
+  // Prologue to write the dummy
+  definePrologue(action s.dummy <= 42; endaction);
+
+  // Epilogue to display the dummy
+  definePrologue(action
+    printTLogPlusArgs("itrace", $format("dummy = %0d", s.dummy));
+  endaction);
+
   // Epilogue happening after each instruction.
   defineEpilogue(action
     s.instCnt <= s.instCnt + 1;
     printTLogPlusArgs("itrace", "--------------- epilogue --------------");
   endaction);
+
+  // some counter to make some events happen
+  Reg#(Bit#(16)) cnt <- mkReg(0);
+  rule count; cnt <= cnt + 1; endrule
+
+  // this defines an interlude to happen between instructions when the guard is true
+  defineInterlude(Guarded { guard: (cnt[2:0] == 3'b100), val: action
+    s.dummy <= 84;
+    printTLog("!!! An interlude when cnt[2:0] == 3'b100 !!!");
+  endaction });
 
 endmodule
 
@@ -246,19 +267,6 @@ module [InstrDefModule] mkExtensionISA#(ArchState s) ();
   // XXX Uncomment to get multiple in module instruction definition error
   //defineInstr("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
 
-  // some counter to make some events happen
-  Reg#(Bit#(16)) cnt <- mkReg(0);
-  rule count; cnt <= cnt + 1; endrule
-
-  // this defines a prologue to happen before each instruction when the guard is true
-  definePrologue(Guarded { guard: (cnt[2:0] == 3'b000), val: action printTLog("!!! A prologue when cnt[2:0] == 3'b000 !!!"); endaction });
-
-  // this defines an epilogue to happen after each instruction when the guard is true
-  defineEpilogue(Guarded { guard: (cnt[2:0] == 3'b000), val: action printTLog("!!! An epilogue when cnt[2:0] == 3'b000 !!!"); endaction });
-
-  // this defines an interlude to happen between instructions when the guard is true
-  defineInterlude(Guarded { guard: (cnt[2:0] == 3'b100), val: action printTLog("!!! An interlude when cnt[2:0] == 3'b100 !!!"); endaction });
-
 endmodule
 
 ///////////////////////////////////
@@ -280,19 +288,6 @@ module bidExample (Probes);
   // defined in modules later in the list with the same name as earlier
   // definitions overwrite the definition.
   mkISASim(s, list(mkBaseISA, mkExtensionISA));
-
-  /*
-  // XXX TEST virtualize Reg
-  Reg#(Bit#(32)) tmp <- mkReg(0);
-  let r <- virtualize(asReg(tmp), 4);
-  Reg#(Bit#(2)) cnt <- mkReg(0);
-  rule count; cnt <= cnt + 1; endrule
-  rule test0 (cnt == 0); r[0] <= 0; printTLog("test0"); endrule
-  rule test1 (cnt == 1); r[1] <= 1; printTLog("test1"); endrule
-  rule test2 (cnt == 2); r[2] <= 2; printTLog("test2"); endrule
-  rule test3 (cnt == 3); r[3] <= 3; printTLog("test3"); endrule
-  // XXX TEST
-  */
 
   // Probing interface -- usefull when synthesizing
   method Bit#(32) peekPC() = s.pc;
