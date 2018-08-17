@@ -135,9 +135,10 @@ provisos (State#(state_t));
 
   // Interlude recipes
   //////////////////////////////////////////////////////////////////////////////
-  Recipe interludeRecipe = rOneMatchDelay(
+  function wrapDelay(x) = rSeq(rBlock(rAct(noAction), x, rAct(noAction)));
+  Recipe interludeRecipe = rOneMatch(
     cons(False, map(getGuard, cols.interDefs)),
-    cons(rAct(noAction), map(rTag("interlude"), map(getRecipe, cols.interDefs))),
+    cons(rAct(noAction), map(wrapDelay, map(rMutExGroup("interludeGroup"), map(getRecipe, cols.interDefs)))),
     rAct(noAction)
   );
 
@@ -175,19 +176,19 @@ provisos (State#(state_t));
   // Build main loop and compile recipe
   //////////////////////////////////////////////////////////////////////////////
   let machine <- compile(rSeq(rBlock(
-    rAct(action
+    rMutExGroup("resetGroup", rAct(action
       // fetch instruction on reset
       reqNextInst(state);
       // clear reseet after first cycle
       isReset <= False;
-    endaction),
+    endaction)),
     rWhile(True, rFastSeq(rBlock(
-      iPeekRecipe,
-      prologueRecipe,
-      instrRecipe,
-      epilogueRecipe,
+      rMutExGroup("standardGroup", iPeekRecipe),
+      rMutExGroup("standardGroup", prologueRecipe),
+      rMutExGroup("standardGroup", instrRecipe),
+      rMutExGroup("standardGroup", epilogueRecipe),
       interludeRecipe,
-      iFetchRecipe
+      rMutExGroup("standardGroup", iFetchRecipe)
     ))),
     rAct(action
       terminateSim(state, $format("reached the end of the recipe"));
