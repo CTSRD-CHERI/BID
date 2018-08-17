@@ -27,6 +27,7 @@
  */
 
 import Vector :: *;
+import ConfigReg :: *;
 import ClientServer :: *;
 import GetPut :: *;
 
@@ -78,7 +79,7 @@ module mkState (ArchState);
   Mem2#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkSharedMem2(4096, "test-prog.hex");
   s.dmem = mem.p0;
   s.imem = mem.p1;
-  s.dummy <- mkRegU;
+  s.dummy <- mkConfigRegU;
   return s;
 endmodule
 
@@ -225,7 +226,7 @@ module [InstrDefModule] mkBaseISA#(ArchState s) ();
   definePrologue(action s.dummy <= 42; endaction);
 
   // Epilogue to display the dummy
-  definePrologue(action
+  defineEpilogue(action
     printTLogPlusArgs("itrace", $format("dummy = %0d", s.dummy));
   endaction);
 
