@@ -243,11 +243,14 @@ module [Module] getCollections#(
   let interModuleDefs = map(getInterDefs, isaInstrModuleDefs);
   // instruction definitions
   List#(InstrDefn) instrDefs = mergeInstrDefns(instrModuleDefs);
+  let instrDefsLen = length(instrDefs);
+  if (instrDefsLen < 1)
+    errorM(sprintf("There must be at least one instruction defined with defineInstr (%0d detected)", instrDefsLen));
   // unknown instruction definitions
   let unkInstrDefs = concat(unkInstrModuleDefs);
   let unkInstrDefsLen = length(unkInstrDefs);
   if (unkInstrDefsLen != 1)
-    errorM(sprintf("There must be exactly one unknown instruction behaviour defined with defineUnkInst (%0d detected)", unkInstrDefsLen));
+    errorM(sprintf("There must be exactly one unknown instruction defined with defineUnkInstr (%0d detected)", unkInstrDefsLen));
   // flatten list of prologues
   let proDefs = concat(proModuleDefs);
   // flatten list of epilogues
