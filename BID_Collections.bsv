@@ -26,14 +26,13 @@
  * @BERI_LICENSE_HEADER_END@
  */
 
-import Recipe :: *;
-import BitPat :: *;
-
 import List :: *;
 import Printf :: *;
 import ModuleCollect :: *;
 
-import BlueUtils :: *;
+// non standard packages
+import Recipe :: *;
+import BitPat :: *;
 
 //////////////////////////
 // Simulator state type //

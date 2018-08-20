@@ -31,10 +31,11 @@ import ConfigReg :: *;
 import ClientServer :: *;
 import GetPut :: *;
 
-import BitPat :: *;
-import BlueBasics :: *;
-import BlueUtils :: *;
+// non standard packages
 import BID :: *;
+import BitPat :: *;
+import MkList :: *;
+import BlueUtils :: *;
 
 // Example use of the BID framework
 

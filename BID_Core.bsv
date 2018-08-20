@@ -31,11 +31,11 @@ import FIFO :: *;
 import Printf :: *;
 import ModuleCollect :: *;
 
+// non standard packages
 import Recipe :: *;
 import BitPat :: *;
-
-import BID_Collections :: *;
 import BlueUtils :: *;
+import BID_Collections :: *;
 
 //////////////////////////
 // terminate simulation //
