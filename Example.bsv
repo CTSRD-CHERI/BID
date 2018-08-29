@@ -34,8 +34,8 @@ import GetPut :: *;
 // non standard packages
 import BID :: *;
 import BitPat :: *;
-import MkList :: *;
 import BlueUtils :: *;
+import ListExtra :: *;
 
 // Example use of the BID framework
 
