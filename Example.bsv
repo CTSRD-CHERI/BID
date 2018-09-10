@@ -77,9 +77,9 @@ module mkState (ArchState);
   s.instCnt <- mkReg(0);
   // Use BID mkSharedMem2 module initialized with the "test-prog.hex" file's
   // content with a size of 4096 bytes.
-  Mem2#(Bit#(32), Bit#(32), Bit#(32)) mem <- mkSharedMem2(4096, "test-prog.hex");
-  s.dmem = mem.p0;
-  s.imem = mem.p1;
+  Mem#(Bit#(32), Bit#(32)) mem[2] <- mkSharedMem2(4096, "test-prog.hex");
+  s.dmem = mem[0];
+  s.imem = mem[1];
   s.dummy <- mkConfigRegU;
   return s;
 endmodule
