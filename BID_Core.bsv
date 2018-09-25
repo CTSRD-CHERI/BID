@@ -27,7 +27,7 @@
  */
 
 import List :: *;
-import FIFO :: *;
+import FIFOF :: *;
 import Printf :: *;
 import ModuleCollect :: *;
 
@@ -35,7 +35,8 @@ import ModuleCollect :: *;
 import Recipe :: *;
 import BitPat :: *;
 import BlueUtils :: *;
-import BID_Collections :: *;
+import DefinitionTypes :: *;
+import SourceSink :: *;
 
 //////////////////////////
 // terminate simulation //
@@ -66,7 +67,7 @@ interface BIDProbes;
 endinterface
 
 module [Module] mkISASim#(
-  state_t state, List#(function InstrDefModule#(ifc) mkMod (state_t st)) ms)
+  state_t state, List#(function ISADefModule#(ifc) mkMod (state_t st)) ms)
   (BIDProbes)
 provisos (State#(state_t));
 
@@ -78,7 +79,7 @@ provisos (State#(state_t));
 
   // harvest collections
   //////////////////////////////////////////////////////////////////////////////
-  BIDCollections cols <- getCollections(state, ms);
+  ISAEntries entries <- getISAEntries(state, ms);
   function Bool getGuard(Guarded#(Recipe) x) = x.guard;
   function Recipe getRecipe(Guarded#(Recipe) x) = x.val;
 
@@ -87,11 +88,19 @@ provisos (State#(state_t));
   PulseWire w_on_inst_commit_fired <- mkPulseWire;
   PulseWire w_fetch_next_instr_fired <- mkPulseWire;
 
+  // Initialization Recipe extraction
+  //////////////////////////////////////////////////////////////////////////////
+  Recipe initRecipe = entries.initEntry;
+
+  // Fetch instruction RecipeFSMSlave
+  //////////////////////////////////////////////////////////////////////////////
+  let fetchInst <- mkRecipeFSMRsp(entries.fetchInstEntry);
+
   // Peek at next instruction from imem (to be ran before the prologues)
   //////////////////////////////////////////////////////////////////////////////
   Recipe iPeekRecipe = rAct(action
     w_peek_imem_fired.send; // probing
-    Bit#(MaxInstSz) rsp <- getNextInst(state);
+    Bit#(MaxInstSz) rsp <- fetchInst.rsp.get;
     latchedInst[0] <= tagged Valid rsp;
     printTLogPlusArgs("BID_Core", $format("received instruction response: ", fshow(rsp)));
   endaction);
@@ -102,19 +111,19 @@ provisos (State#(state_t));
   // Prologue recipes
   //////////////////////////////////////////////////////////////////////////////
   List#(Guarded#(Recipe)) prologues =
-    cons(Guarded {guard: False, val: rAct(noAction)}, cols.proDefs);
+    cons(Guarded {guard: False, val: rAct(noAction)}, entries.proEntries);
   Recipe prologueRecipe =
     rAllGuard(map(getGuard, prologues), map(getRecipe, prologues));
 
   // Instruction execution recipes
   //////////////////////////////////////////////////////////////////////////////
   function getGuardedRecipe(x) = tpl_2(x)(fromMaybe(?, inst));
-  List#(Guarded#(Recipe)) grs = map(getGuardedRecipe, cols.instrDefs);
+  List#(Guarded#(Recipe)) grs = map(getGuardedRecipe, entries.instEntries);
   function protectGuard(g) = isValid(inst) && g;
   Recipe instrRecipe = rOneMatch(
     map(protectGuard, map(getGuard, grs)),
     map(getRecipe, grs),
-    cols.unkInstrDef(fromMaybe(?, inst))
+    entries.unkInstEntry(fromMaybe(?, inst))
   );
 
   // Instruction commit recipe (to be ran as an epilogue)
@@ -129,7 +138,7 @@ provisos (State#(state_t));
   // Epilogue recipes
   //////////////////////////////////////////////////////////////////////////////
   List#(Guarded#(Recipe)) epilogues =
-    cons(Guarded {guard: True, val: instrCommitRecipe}, cols.epiDefs);
+    cons(Guarded {guard: True, val: instrCommitRecipe}, entries.epiEntries);
   Recipe epilogueRecipe =
     rAllGuard(map(getGuard, epilogues), map(getRecipe, epilogues));
 
@@ -137,8 +146,8 @@ provisos (State#(state_t));
   //////////////////////////////////////////////////////////////////////////////
   function wrapDelay(x) = rSeq(rBlock(rAct(noAction), x, rAct(noAction)));
   Recipe interludeRecipe = rOneMatch(
-    cons(False, map(getGuard, cols.interDefs)),
-    cons(rAct(noAction), map(wrapDelay, map(rMutExGroup("interludeGroup"), map(getRecipe, cols.interDefs)))),
+    cons(False, map(getGuard, entries.interEntries)),
+    cons(rAct(noAction), map(wrapDelay, map(rMutExGroup("interludeGroup"), map(getRecipe, entries.interEntries)))),
     rAct(noAction)
   );
 
@@ -146,7 +155,7 @@ provisos (State#(state_t));
   //////////////////////////////////////////////////////////////////////////////
   Recipe iFetchRecipe = rAct(action
     w_fetch_next_instr_fired.send; // probing
-    reqNextInst(state);
+    fetchInst.fsm.start;
     printTLogPlusArgs("BID_Core", $format("fetching next instr"));
     printLogPlusArgs("BID_Core", "==============================================");
   endaction);
@@ -177,10 +186,10 @@ provisos (State#(state_t));
   //////////////////////////////////////////////////////////////////////////////
   let machine <- compile(rSeq(rBlock(
     rMutExGroup("resetGroup", rSeq(rBlock(
-    cols.initDef,
+    initRecipe,
     rAct(action
       // fetch instruction on reset
-      reqNextInst(state);
+      fetchInst.fsm.start;
       // clear reseet after first cycle
       isReset <= False;
     endaction)))),

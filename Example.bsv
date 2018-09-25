@@ -36,6 +36,8 @@ import BID :: *;
 import BitPat :: *;
 import BlueUtils :: *;
 import ListExtra :: *;
+import Recipe :: *;
+import SourceSink :: *;
 
 // Example use of the BID framework
 
@@ -99,23 +101,6 @@ instance State#(ArchState);
       $format("pc = 0x%0x, instCnt = %0d", s.pc, s.instCnt)
     );
   endfunction
-  // Two functions to describe the behaviour the simulator should follow when
-  // fetching instructions
-  function Action reqNextInst(ArchState s) = s.imem.request.put(tagged ReadReq {
-    addr: s.pc.next, // note the use of the "next" method of the PC register
-    numBytes: 4 // request four bytes for an instruction
-  });
-  function ActionValue#(Bit#(MaxInstSz)) getNextInst(ArchState s) = actionvalue
-    let rsp <- s.imem.response.get(); // get the memory response
-    case (rsp) matches
-      tagged ReadRsp .val: begin
-        // update the current instruction size
-        s.instByteSz <= (val[1:0] == 2'b11) ? 4 : 2;
-        return val;
-      end
-      default: return ?;
-    endcase
-  endactionvalue;
 
 endinstance
 
@@ -187,14 +172,36 @@ endaction;
 // The unknown instruction, to be executed when no other instruction matched.
 function List#(Action) unkInst(ArchState s, Bit#(MaxInstSz) inst) = list(
   printTLogPlusArgs("itrace", $format("Unknown instruction 0x%0x", inst)),
-  printTLog($format("UNKNOWN INSTRUCTION 0x%0x", inst))
+  noAction//printTLog($format("UNKNOWN INSTRUCTION 0x%0x", inst))
 );
 
-// Define a BID InstrDefModule module to enable the use of defineInstr and
-// defineUnkInstr. Note the BID State instance as a module argument.
-module [InstrDefModule] mkBaseISA#(ArchState s) ();
+// Define architectural behaviour for instruction fetching
+function Recipe instFetch(ArchState s, Sink#(Bit#(MaxInstSz)) snk) =
+rSeq(rBlock(
+  // put a reqd request to the instruction memory
+  s.imem.request.put(tagged ReadReq {
+    addr: s.pc.next, // note the use of the "next" method of the PC register
+    numBytes: 4 // request four bytes for an instruction
+  }),
+  // get the response from the instruction memory
+  action
+    let rsp <- s.imem.response.get(); // get the memory response
+    case (rsp) matches
+      tagged ReadRsp .val: begin
+        // update the current instruction size
+        s.instByteSz <= (val[1:0] == 2'b11) ? 4 : 2;
+        snk.put(val);
+      end
+      default: snk.put(?);
+    endcase
+  endaction
+));
 
-  // Use the BID defineInstr primitive to register an instruction with the
+// Define a BID InstrDefModule module to enable the use of defineInstEntry and
+// defineUnkInstEntry. Note the BID State instance as a module argument.
+module [ISADefModule] mkBaseISA#(ArchState s) ();
+
+  // Use the BID defineInstEntry primitive to register an instruction with the
   // simulator. The first argument is a string to identify an instruction, the
   // second argument is a pattern to be matched. The third argument is the
   // semantic function of the instruction being registered.
@@ -205,37 +212,40 @@ module [InstrDefModule] mkBaseISA#(ArchState s) ();
   // note that the following semantic functions are all partially applied with
   // the architectural state, effectivelly leaving only the relevant arguments
   // to correctly infer the types in the pattern.
-  defineInstr("add" , pat(n(7'b0), v, v, n(3'b000),    v, n(7'b0110011)), instrADD(s));
-  defineInstr("addi", pat(         v, v, n(3'b000),    v, n(7'b0010011)), instrADDI(s));
-  defineInstr("jal" , pat(                 v, v, v, v, v, n(7'b1101111)), instrJAL(s));
-  defineInstr("beq" , pat(   v, v, v, v, n(3'b000), v, v, n(7'b1100011)), instrBEQ(s));
-  defineInstr("lb"  , pat(         v, v, n(3'b000),    v, n(7'b0000011)), instrLB(s));
-  defineInstr("sb"  , pat(      v, v, v, n(3'b000),    v, n(7'b0100011)), instrSB(s));
+  defineInstEntry("add" , pat(n(7'b0), v, v, n(3'b000),    v, n(7'b0110011)), instrADD(s));
+  defineInstEntry("addi", pat(         v, v, n(3'b000),    v, n(7'b0010011)), instrADDI(s));
+  defineInstEntry("jal" , pat(                 v, v, v, v, v, n(7'b1101111)), instrJAL(s));
+  defineInstEntry("beq" , pat(   v, v, v, v, n(3'b000), v, v, n(7'b1100011)), instrBEQ(s));
+  defineInstEntry("lb"  , pat(         v, v, n(3'b000),    v, n(7'b0000011)), instrLB(s));
+  defineInstEntry("sb"  , pat(      v, v, v, n(3'b000),    v, n(7'b0100011)), instrSB(s));
   // Note the pattern size for c.li (16 bits as opposed to 32 bits for the
   // other instructions). Together with the instruction fetch behaviour, this is
   // enough to implement variable length instructions.
-  defineInstr("c.li", pat(n(3'b010), v, v, v, n(2'b01)), instrC_LI(s));
+  defineInstEntry("c.li", pat(n(3'b010), v, v, v, n(2'b01)), instrC_LI(s));
   // The unknown instruction does not require a pattern.
-  defineUnkInstr(unkInst(s));
+  defineUnkInstEntry(unkInst(s));
   // XXX Uncomment to get multiple unknown instruction definition error.
-  //defineUnkInstr(unkInst);
+  //defineUnkInstEntry(unkInst(s));
 
-  // Initialization
-  defineInit(action $display("ready to go..."); endaction);
+  // initialization definition
+  defineInitEntry(noAction);
+
+  // instruction fetching definition
+  defineFetchInstEntry(instFetch(s));
 
   // Prologue to prepare Next PC
-  definePrologue(action asReg(s.pc.next) <= s.pc + s.instByteSz; endaction);
+  defineProEntry(action asReg(s.pc.next) <= s.pc + s.instByteSz; endaction);
 
   // Prologue to write the dummy
-  definePrologue(action s.dummy <= 42; endaction);
+  defineProEntry(action s.dummy <= 42; endaction);
 
   // Epilogue to display the dummy
-  defineEpilogue(action
+  defineEpiEntry(action
     printTLogPlusArgs("itrace", $format("dummy = %0d", s.dummy));
   endaction);
 
   // Epilogue happening after each instruction.
-  defineEpilogue(action
+  defineEpiEntry(action
     s.instCnt <= s.instCnt + 1;
     printTLogPlusArgs("itrace", "--------------- epilogue --------------");
   endaction);
@@ -245,7 +255,7 @@ module [InstrDefModule] mkBaseISA#(ArchState s) ();
   rule count; cnt <= cnt + 1; endrule
 
   // this defines an interlude to happen between instructions when the guard is true
-  defineInterlude(Guarded { guard: (cnt[2:0] == 3'b100), val: action
+  defineInterEntry(Guarded { guard: (cnt[2:0] == 3'b100), val: action
     s.dummy <= 84;
     printTLog("!!! An interlude when cnt[2:0] == 3'b100 !!!");
   endaction });
@@ -253,7 +263,7 @@ module [InstrDefModule] mkBaseISA#(ArchState s) ();
 endmodule
 
 // An example extension module with instruction overwritting
-module [InstrDefModule] mkExtensionISA#(ArchState s) ();
+module [ISADefModule] mkExtensionISA#(ArchState s) ();
 
   // A new semantic function intended to replace the conventional add.
   // Note that the architectural state is not an explicit argument as it is
@@ -267,10 +277,10 @@ module [InstrDefModule] mkExtensionISA#(ArchState s) ();
   endaction;
   // The use of the same string "add" as in the mkBaseISA will cause
   // overwriting of the previous declaration.
-  defineInstr("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
+  defineInstEntry("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
 
   // XXX Uncomment to get multiple in module instruction definition error
-  //defineInstr("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
+  //defineInstEntry("add",pat(n(7'b0), v, v, n(3'b0), v, n(7'b0110011)),instrADD);
 
 endmodule
 

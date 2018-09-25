@@ -29,9 +29,9 @@
 package BID;
 
 import BID_Core :: *;
-import BID_Collections :: *;
+import DefinitionTypes :: *;
 
 export BID_Core :: *;
-export BID_Collections :: *;
+export DefinitionTypes :: *;
 
 endpackage
