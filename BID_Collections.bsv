@@ -57,11 +57,13 @@ typedef 32 MaxInstSz;
 
 typedef Tuple2#(String, function Guarded#(Recipe) f(Bit#(MaxInstSz) subject)) InstrDefn;
 typedef function Recipe f(Bit#(MaxInstSz) subject) UnkInstrDefn;
+typedef Recipe InitDefn;
 typedef Guarded#(Recipe) ProDefn;
 typedef Guarded#(Recipe) EpiDefn;
 typedef Guarded#(Recipe) InterDefn;
 
 typedef union tagged {
+  InitDefn InitDef; // To define an initialization recipe
   InstrDefn InstrDef; // To define an the behaviour of an instruction
   UnkInstrDefn UnkInstrDef; // To define the behaviour on an unknown instruction
   ProDefn ProDef; // To define a behaviour at the beginning of instructions
@@ -75,6 +77,7 @@ function List#(``n``Defn) get``n``Def (ISAInstDfn e) =\
 function List#(``n``Defn) get``n``Defs(List#(ISAInstDfn) defs) =\
   concat(map(get``n``Def,defs));
 
+`defGet(Init)
 `defGet(Instr)
 `defGet(UnkInstr)
 `defGet(Pro)
@@ -84,6 +87,22 @@ function List#(``n``Defn) get``n``Defs(List#(ISAInstDfn) defs) =\
 `undef defGet
 
 typedef ModuleCollect#(ISAInstDfn, ifc) InstrDefModule#(type ifc);
+
+// define an InitDef
+////////////////////////////////////////////////////////////////////////////////
+typeclass DefineInit#(type a);
+  module [InstrDefModule] defineInit#(a x)();
+endtypeclass
+instance DefineInit#(Action);
+  module [InstrDefModule] defineInit#(Action x)();
+    addToCollection(InitDef(rAct(x)));
+  endmodule
+endinstance
+instance DefineInit#(Recipe);
+  module [InstrDefModule] defineInit#(Recipe x)();
+    addToCollection(InitDef(x));
+  endmodule
+endinstance
 
 // define an InstrDef
 ////////////////////////////////////////////////////////////////////////////////
@@ -215,6 +234,7 @@ endinstance
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef struct {
+  InitDefn initDef;
   List#(InstrDefn) instrDefs;
   UnkInstrDefn unkInstrDef;
   List#(ProDefn) proDefs;
@@ -235,11 +255,17 @@ module [Module] getCollections#(
   List#(List#(ISAInstDfn)) isaInstrModuleDefs = map(getItems, cs);
   // split definitions per type
   let func = compose(checkInstrDefns,compose(sortBy(cmpInstrDefn),getInstrDefs));
+  let initModuleDefs = map(getInitDefs, isaInstrModuleDefs);
   let instrModuleDefs = map(func, isaInstrModuleDefs);
   let unkInstrModuleDefs = map(getUnkInstrDefs, isaInstrModuleDefs);
   let proModuleDefs = map(getProDefs, isaInstrModuleDefs);
   let epiModuleDefs = map(getEpiDefs, isaInstrModuleDefs);
   let interModuleDefs = map(getInterDefs, isaInstrModuleDefs);
+  // init definitions
+  let initDefs = concat(initModuleDefs);
+  let initDefsLen = length(initDefs);
+  if (initDefsLen != 1)
+    errorM(sprintf("There must be exactly one initialization defined with defineInit (%0d detected)", initDefsLen));
   // instruction definitions
   List#(InstrDefn) instrDefs = mergeInstrDefns(instrModuleDefs);
   let instrDefsLen = length(instrDefs);
@@ -258,6 +284,7 @@ module [Module] getCollections#(
   let interDefs = concat(interModuleDefs);
 
   return BIDCollections {
+    initDef: head(initDefs),
     instrDefs: instrDefs,
     unkInstrDef: head(unkInstrDefs),
     proDefs: proDefs,

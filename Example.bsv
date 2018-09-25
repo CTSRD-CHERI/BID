@@ -220,6 +220,9 @@ module [InstrDefModule] mkBaseISA#(ArchState s) ();
   // XXX Uncomment to get multiple unknown instruction definition error.
   //defineUnkInstr(unkInst);
 
+  // Initialization
+  defineInit(action $display("ready to go..."); endaction);
+
   // Prologue to prepare Next PC
   definePrologue(action asReg(s.pc.next) <= s.pc + s.instByteSz; endaction);
 

@@ -176,12 +176,14 @@ provisos (State#(state_t));
   // Build main loop and compile recipe
   //////////////////////////////////////////////////////////////////////////////
   let machine <- compile(rSeq(rBlock(
-    rMutExGroup("resetGroup", rAct(action
+    rMutExGroup("resetGroup", rSeq(rBlock(
+    cols.initDef,
+    rAct(action
       // fetch instruction on reset
       reqNextInst(state);
       // clear reseet after first cycle
       isReset <= False;
-    endaction)),
+    endaction)))),
     rWhile(True, rFastSeq(rBlock(
       rMutExGroup("standardGroup", iPeekRecipe),
       rMutExGroup("standardGroup", prologueRecipe),
