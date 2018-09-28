@@ -177,7 +177,7 @@ function List#(Action) unkInst(ArchState s, Bit#(MaxInstSz) inst) = list(
 
 // Define architectural behaviour for instruction fetching
 function Recipe instFetch(ArchState s, Sink#(Bit#(MaxInstSz)) snk) =
-rSeq(rBlock(
+rPipe(rBlock(
   // put a reqd request to the instruction memory
   s.imem.request.put(tagged ReadReq {
     addr: s.pc.next, // note the use of the "next" method of the PC register

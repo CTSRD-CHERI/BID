@@ -155,7 +155,7 @@ provisos (State#(state_t));
   //////////////////////////////////////////////////////////////////////////////
   Recipe iFetchRecipe = rAct(action
     w_fetch_next_instr_fired.send; // probing
-    fetchInst.fsm.start;
+    fetchInst.fsm.trigger;
     printTLogPlusArgs("BID_Core", $format("fetching next instr"));
     printLogPlusArgs("BID_Core", "==============================================");
   endaction);
@@ -184,12 +184,12 @@ provisos (State#(state_t));
 
   // Build main loop and compile recipe
   //////////////////////////////////////////////////////////////////////////////
-  let machine <- compile(rSeq(rBlock(
+  let machine <- mkRecipeFSM(rSeq(rBlock(
     rMutExGroup("resetGroup", rSeq(rBlock(
     initRecipe,
     rAct(action
       // fetch instruction on reset
-      fetchInst.fsm.start;
+      fetchInst.fsm.trigger;
       // clear reseet after first cycle
       isReset <= False;
     endaction)))),
@@ -205,7 +205,7 @@ provisos (State#(state_t));
       terminateSim(state, $format("reached the end of the recipe"));
     endaction)
   )));
-  rule startMachine(isReset); machine.start(); endrule
+  rule startMachine(isReset); machine.trigger; endrule
 
   // populate probes
   method latchedInst0 = fromMaybe(?,latchedInst[0]);
