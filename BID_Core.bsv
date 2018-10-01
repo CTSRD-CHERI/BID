@@ -144,10 +144,14 @@ provisos (State#(state_t));
 
   // Interlude recipes
   //////////////////////////////////////////////////////////////////////////////
-  function wrapDelay(x) = rSeq(rBlock(rAct(noAction), x, rAct(noAction)));
+  function  wrapDelay(x) = rSeq(rBlock(rAct(noAction), x, rAct(noAction)));
+  function wrapCommit(x) = rFastSeq(rBlock(x, rAct(commit(state))));
   Recipe interludeRecipe = rOneMatch(
     cons(False, map(getGuard, entries.interEntries)),
-    cons(rAct(noAction), map(wrapDelay, map(rMutExGroup("interludeGroup"), map(getRecipe, entries.interEntries)))),
+    cons(rAct(noAction), map(wrapDelay,
+                             map(rMutExGroup("interludeGroup"),
+                                 map(wrapCommit,
+                                 map(getRecipe, entries.interEntries))))),
     rAct(noAction)
   );
 
@@ -198,6 +202,7 @@ provisos (State#(state_t));
       rMutExGroup("standardGroup", prologueRecipe),
       rMutExGroup("standardGroup", instrRecipe),
       rMutExGroup("standardGroup", epilogueRecipe),
+      rMutExGroup("standardGroup", rAct(commit(state))),
       interludeRecipe,
       rMutExGroup("standardGroup", iFetchRecipe)
     ))),

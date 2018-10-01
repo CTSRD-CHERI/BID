@@ -47,6 +47,7 @@ typedef 32 MaxInstSz;
 typeclass State#(type a);
   function Fmt lightReport (a s);
   function Fmt fullReport (a s);
+  function Action commit (a s);
 endtypeclass
 
 //////////////////////////////////

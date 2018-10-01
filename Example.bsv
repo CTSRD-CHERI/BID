@@ -50,7 +50,7 @@ typedef struct {
   // register file
   Vector#(32,Reg#(Bit#(32))) regfile;
   // program counter
-  PC#(Bit#(32)) pc;
+  ArchReg#(Bit#(32)) pc;
   // current instruction's byte length (useful for variable length instructions
   // support)
   Reg#(Bit#(32)) instByteSz;
@@ -71,7 +71,7 @@ module mkState (ArchState);
   // Use the BID mkPC module that provides an interface with the conventional
   // _read() and _write() methods, together with a next() method capturing the
   // next value of the PC to help for instruction fetching.
-  s.pc <- mkPC(0);
+  s.pc <- mkArchReg(0);
   // Use the BID mkBypassRegU module that provides a standard Reg interface
   // with the _read() returning the value written in the current cycle if
   // _write() was called, or the previous value otherwise.
@@ -101,6 +101,9 @@ instance State#(ArchState);
       $format("pc = 0x%0x, instCnt = %0d", s.pc, s.instCnt)
     );
   endfunction
+  function Action commit (ArchState s) = action
+    s.pc.commit;
+  endaction;
 
 endinstance
 
@@ -180,7 +183,7 @@ function Recipe instFetch(ArchState s, Sink#(Bit#(MaxInstSz)) snk) =
 rPipe(rBlock(
   // put a reqd request to the instruction memory
   s.imem.request.put(tagged ReadReq {
-    addr: s.pc.next, // note the use of the "next" method of the PC register
+    addr: s.pc.late, // note the use of the "latet" interface of the PC register
     numBytes: 4 // request four bytes for an instruction
   }),
   // get the response from the instruction memory
@@ -234,7 +237,7 @@ module [ISADefModule] mkBaseISA#(ArchState s) ();
   defineFetchInstEntry(instFetch(s));
 
   // Prologue to prepare Next PC
-  defineProEntry(action asReg(s.pc.next) <= s.pc + s.instByteSz; endaction);
+  defineProEntry(action asIfc(s.pc.early) <= s.pc + s.instByteSz; endaction);
 
   // Prologue to write the dummy
   defineProEntry(action s.dummy <= 42; endaction);
@@ -303,6 +306,7 @@ module bidExample (Probes);
   // defined in modules later in the list with the same name as earlier
   // definitions overwrite the definition.
   mkISASim(s, list(mkBaseISA, mkExtensionISA));
+  //mkISASim(s, list(mkBaseISA));
 
   // Probing interface -- usefull when synthesizing
   method Bit#(32) peekPC() = s.pc;
