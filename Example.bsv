@@ -48,7 +48,7 @@ import SourceSink :: *;
 // An architectural state of the example machine
 typedef struct {
   // register file
-  Vector#(32,Reg#(Bit#(32))) regfile;
+  ArchRegFile#(32, Bit#(32)) regfile;
   // program counter
   ArchReg#(Bit#(32)) pc;
   // current instruction's byte length (useful for variable length instructions
@@ -79,7 +79,7 @@ module mkState (ArchState);
   s.instCnt <- mkReg(0);
   // Use BID mkSharedMem2 module initialized with the "test-prog.hex" file's
   // content with a size of 4096 bytes.
-  Mem#(Bit#(32), Bit#(32)) mem[2] <- mkSharedMem2(4096, "test-prog.hex");
+  Mem#(Bit#(32), Bit#(32)) mem[2] <- mkSharedMem2(4096, Valid("test-prog.hex"));
   s.dmem = mem[0];
   s.imem = mem[1];
   s.dummy <- mkConfigRegU;
@@ -96,10 +96,18 @@ instance State#(ArchState);
   endfunction
   // Some heavy logging
   function Fmt fullReport (ArchState s);
-    return (
-      $format("regfile %s \n", map(readReg,s.regfile)) +
-      $format("pc = 0x%0x, instCnt = %0d", s.pc, s.instCnt)
-    );
+    Fmt str = $format("regfile\n");
+    for (Integer i = 0; i < 6; i = i + 1) begin
+      for (Integer j = 0; j < 5; j = j + 1) begin
+        Bit#(5) ridx = fromInteger(i*5+j);
+        str = str + $format("r[%0d]: 0x%8x\t", ridx, s.regfile.r[ridx]);
+      end
+      str = str + $format("\n");
+    end
+    str = str + $format("r[30]: 0x%8x\t", s.regfile.r[30]);
+    str = str + $format("r[31]: 0x%8x", s.regfile.r[31]);
+    str = str + $format("\npc = 0x%0x, instCnt = %0d", s.pc, s.instCnt);
+    return str;
   endfunction
   function Action commit (ArchState s) = action
     s.pc.commit;
@@ -115,28 +123,28 @@ endinstance
 // toplevel functions, explicitly receiving the architectural state, and
 // returning a single Action.
 function Action instrADD(ArchState s, Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
-  s.regfile[rd] <= s.regfile[rs1] + s.regfile[rs2];
+  s.regfile.r[rd] <= s.regfile.r[rs1] + s.regfile.r[rs2];
   printTLogPlusArgs("itrace", $format("add %0d, %0d, %0d", rd, rs1, rs2));
-  printTLogPlusArgs("itrace", $format("regfile[%0d] <= 0x%0x", rd, s.regfile[rs1] + s.regfile[rs2]));
+  printTLogPlusArgs("itrace", $format("regfile.r[%0d] <= 0x%0x", rd, s.regfile.r[rs1] + s.regfile.r[rs2]));
 endaction;
 
 function Action instrADDI(ArchState s, Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) = action
-  s.regfile[rd] <= s.regfile[rs1] + signExtend(imm);
+  s.regfile.r[rd] <= s.regfile.r[rs1] + signExtend(imm);
   printTLogPlusArgs("itrace", $format("addi %0d, %0d, 0x%0x", rd, rs1, imm));
-  printTLogPlusArgs("itrace", $format("regfile[%0d] <= 0x%0x", rd, s.regfile[rs1] + signExtend(imm)));
+  printTLogPlusArgs("itrace", $format("regfile.r[%0d] <= 0x%0x", rd, s.regfile.r[rs1] + signExtend(imm)));
 endaction;
 
 function Action instrJAL(ArchState s, Bit#(1) imm20, Bit#(10) imm10_1, Bit#(1) imm11, Bit#(8) imm19_12, Bit#(5) rd) = action
   Bit#(32) imm = {signExtend(imm20),imm19_12,imm11,imm10_1,1'b0};
   s.pc <= s.pc + imm;
-  s.regfile[rd] <= s.pc + s.instByteSz;
+  s.regfile.r[rd] <= s.pc + s.instByteSz;
   printTLogPlusArgs("itrace", $format("jal %0d, 0x%0x", rd, imm));
 endaction;
 
 function Action instrBEQ (ArchState s, Bit#(1) imm12, Bit#(6) imm10_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(4) imm4_1, Bit#(1) imm11) = action
   Bit#(32) imm = {signExtend(imm12),imm11,imm10_5,imm4_1,1'b0};
   String taken = "not taken";
-  if (s.regfile[rs1] == s.regfile[rs2]) begin
+  if (s.regfile.r[rs1] == s.regfile.r[rs2]) begin
     s.pc <= s.pc + imm;
     taken = "taken";
   end
@@ -148,27 +156,27 @@ endaction;
 // with a module with potential latency (the memory).
 function List#(Action) instrLB(ArchState s, Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) = list(
   action
-    Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
+    Bit#(32) addr = s.regfile.r[rs1] + signExtend(imm);
     s.dmem.request.put(tagged ReadReq {addr: addr, numBytes: 1});
     printTLogPlusArgs("itrace", $format("lb %0d, %0d, 0x%0x - step 1", rd, rs1, imm));
   endaction,
   action
     let rsp <- s.dmem.response.get();
-    case (rsp) matches tagged ReadRsp .r: s.regfile[rd] <= r; endcase
+    case (rsp) matches tagged ReadRsp .r: s.regfile.r[rd] <= r; endcase
     printTLogPlusArgs("itrace", $format("lb %0d, %0d, 0x%0x - step 2", rd, rs1, imm));
   endaction
 );
 
 function Action instrSB(ArchState s, Bit#(7) imm11_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(5) imm4_0) = action
   Bit#(32) imm = {signExtend(imm11_5), imm4_0};
-  Bit#(32) addr = s.regfile[rs1] + signExtend(imm);
-  s.dmem.request.put(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile[rs2]});
+  Bit#(32) addr = s.regfile.r[rs1] + signExtend(imm);
+  s.dmem.request.put(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile.r[rs2]});
   printTLogPlusArgs("itrace", $format("sb %0d, %0d, 0x%0x", rs1, rs2, imm));
 endaction;
 
 // An example of a compressed instruction. See the pattern definition for details.
 function Action instrC_LI(ArchState s, Bit#(1) imm_5, Bit#(5) rd, Bit#(5) imm4_0) = action
-  s.regfile[rd] <= signExtend({imm_5, imm4_0});
+  s.regfile.r[rd] <= signExtend({imm_5, imm4_0});
   printTLogPlusArgs("itrace", $format("c.li %0d, 0x%0x", rd, {imm_5, imm4_0}));
 endaction;
 
@@ -274,9 +282,9 @@ module [ISADefModule] mkExtensionISA#(ArchState s) ();
   // The previous style (explicit state argument of a toplevel function) is
   // prefered if the semantic function is to be imported in other BSV files.
   function Action instrADD(Bit#(5) rs2, Bit#(5) rs1, Bit#(5) rd) = action
-    s.regfile[rd] <= s.regfile[rs1] + s.regfile[rs2];
+    s.regfile.r[rd] <= s.regfile.r[rs1] + s.regfile.r[rs2];
     printTLogPlusArgs("itrace", $format("add %0d, %0d, %0d -- EXTENDED", rd, rs1, rs2));
-    printTLogPlusArgs("itrace", $format("regfile[%0d] <= 0x%0x", rd, s.regfile[rs1] + s.regfile[rs2]));
+    printTLogPlusArgs("itrace", $format("regfile.r[%0d] <= 0x%0x", rd, s.regfile.r[rs1] + s.regfile.r[rs2]));
   endaction;
   // The use of the same string "add" as in the mkBaseISA will cause
   // overwriting of the previous declaration.
