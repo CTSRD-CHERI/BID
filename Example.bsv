@@ -28,13 +28,12 @@
 
 import Vector :: *;
 import ConfigReg :: *;
-import ClientServer :: *;
-import GetPut :: *;
 
 // non standard packages
 import BID :: *;
 import BitPat :: *;
 import BlueUtils :: *;
+import BlueBasics :: *;
 import ListExtra :: *;
 import Recipe :: *;
 import SourceSink :: *;
@@ -157,11 +156,11 @@ endaction;
 function List#(Action) instrLB(ArchState s, Bit#(12) imm, Bit#(5) rs1, Bit#(5) rd) = list(
   action
     Bit#(32) addr = s.regfile.r[rs1] + signExtend(imm);
-    s.dmem.request.put(tagged ReadReq {addr: addr, numBytes: 1});
+    s.dmem.sink.put(tagged ReadReq {addr: addr, numBytes: 1});
     printTLogPlusArgs("itrace", $format("lb %0d, %0d, 0x%0x - step 1", rd, rs1, imm));
   endaction,
   action
-    let rsp <- s.dmem.response.get();
+    let rsp <- s.dmem.source.get();
     case (rsp) matches tagged ReadRsp .r: s.regfile.r[rd] <= r; endcase
     printTLogPlusArgs("itrace", $format("lb %0d, %0d, 0x%0x - step 2", rd, rs1, imm));
   endaction
@@ -170,7 +169,7 @@ function List#(Action) instrLB(ArchState s, Bit#(12) imm, Bit#(5) rs1, Bit#(5) r
 function Action instrSB(ArchState s, Bit#(7) imm11_5, Bit#(5) rs2, Bit#(5) rs1, Bit#(5) imm4_0) = action
   Bit#(32) imm = {signExtend(imm11_5), imm4_0};
   Bit#(32) addr = s.regfile.r[rs1] + signExtend(imm);
-  s.dmem.request.put(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile.r[rs2]});
+  s.dmem.sink.put(tagged WriteReq {addr: addr, byteEnable: 'b1, data: s.regfile.r[rs2]});
   printTLogPlusArgs("itrace", $format("sb %0d, %0d, 0x%0x", rs1, rs2, imm));
 endaction;
 
@@ -190,13 +189,13 @@ function List#(Action) unkInst(ArchState s, Bit#(MaxInstSz) inst) = list(
 function Recipe instFetch(ArchState s, Sink#(Bit#(MaxInstSz)) snk) =
 rPipe(rBlock(
   // put a reqd request to the instruction memory
-  s.imem.request.put(tagged ReadReq {
+  s.imem.sink.put(tagged ReadReq {
     addr: s.pc.late, // note the use of the "latet" interface of the PC register
     numBytes: 4 // request four bytes for an instruction
   }),
   // get the response from the instruction memory
   action
-    let rsp <- s.imem.response.get(); // get the memory response
+    let rsp <- s.imem.source.get(); // get the memory response
     case (rsp) matches
       tagged ReadRsp .val: begin
         // update the current instruction size
