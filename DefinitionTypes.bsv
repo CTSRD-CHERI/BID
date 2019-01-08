@@ -194,6 +194,11 @@ instance Define``name``Entry#(Action);\
   module [ISADefModule] define``name``Entry#(Action x) (Empty);\
     addToCollection(name``Entry(Guarded { guard: True, val: rAct(x) }));\
   endmodule\
+endinstance\
+instance Define``name``Entry#(Recipe);\
+  module [ISADefModule] define``name``Entry#(Recipe x) (Empty);\
+    addToCollection(name``Entry(Guarded { guard: True, val: x }));\
+  endmodule\
 endinstance
 `defProEpiInter(Pro)
 `defProEpiInter(Epi)
