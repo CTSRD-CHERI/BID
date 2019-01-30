@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2018 Alexandre Joannou
+ * Copyright (c) 2018-2019 Alexandre Joannou
  * All rights reserved.
  *
  * This software was developed by SRI International and the University of
@@ -160,7 +160,7 @@ function List#(Action) instrLB(ArchState s, Bit#(12) imm, Bit#(5) rs1, Bit#(5) r
     printTLogPlusArgs("itrace", $format("lb %0d, %0d, 0x%0x - step 1", rd, rs1, imm));
   endaction,
   action
-    let rsp <- s.dmem.source.get();
+    let rsp <- get(s.dmem.source);
     case (rsp) matches tagged ReadRsp .r: s.regfile.r[rd] <= r; endcase
     printTLogPlusArgs("itrace", $format("lb %0d, %0d, 0x%0x - step 2", rd, rs1, imm));
   endaction
@@ -195,7 +195,7 @@ rPipe(rBlock(
   }),
   // get the response from the instruction memory
   action
-    let rsp <- s.imem.source.get(); // get the memory response
+    let rsp <- get(s.imem.source); // get the memory response
     case (rsp) matches
       tagged ReadRsp .val: begin
         // update the current instruction size

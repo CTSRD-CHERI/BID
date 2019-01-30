@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2018 Alexandre Joannou
+ * Copyright (c) 2018-2019 Alexandre Joannou
  * All rights reserved.
  *
  * This software was developed by SRI International and the University of
@@ -100,7 +100,7 @@ provisos (State#(state_t));
   //////////////////////////////////////////////////////////////////////////////
   Recipe iPeekRecipe = rAct(action
     w_peek_imem_fired.send; // probing
-    Bit#(MaxInstSz) rsp <- fetchInst.rsp.get;
+    Bit#(MaxInstSz) rsp <- get(fetchInst.rsp);
     latchedInst[0] <= tagged Valid rsp;
     printTLogPlusArgs("BID_Core", $format("received instruction response: ", fshow(rsp)));
   endaction);
