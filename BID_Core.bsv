@@ -146,13 +146,13 @@ provisos (State#(state_t));
   //////////////////////////////////////////////////////////////////////////////
   function  wrapDelay(x) = rSeq(rBlock(rAct(noAction), x, rAct(noAction)));
   function wrapCommit(x) = rFastSeq(rBlock(x, rAct(commit(state))));
-  Recipe interludeRecipe = rOneMatch(
+  Recipe commitInterludeRecipe = rOneMatch(
     cons(False, map(getGuard, entries.interEntries)),
     cons(rAct(noAction), map(wrapDelay,
                              map(rMutExGroup("interludeGroup"),
                                  map(wrapCommit,
                                  map(getRecipe, entries.interEntries))))),
-    rAct(noAction)
+    rMutExGroup("standardGroup", rAct(commit(state)))
   );
 
   // Instruction fetch recipe
@@ -202,8 +202,7 @@ provisos (State#(state_t));
       rMutExGroup("standardGroup", prologueRecipe),
       rMutExGroup("standardGroup", instrRecipe),
       rMutExGroup("standardGroup", epilogueRecipe),
-      rMutExGroup("standardGroup", rAct(commit(state))),
-      interludeRecipe,
+      commitInterludeRecipe,
       rMutExGroup("standardGroup", iFetchRecipe)
     ))),
     rAct(action
